@@ -159,6 +159,9 @@ glab mr merge 123 --squash
 glab mr approve 123
 glab mr checkout 123
 glab mr diff 123
+glab mr comment 123 --body "Looks good!"
+glab mr comment 123 --body "Consider refactoring this" --file "cmd/mr.go" --line 42
+glab mr comment 123 --body "Good removal" --file "cmd/mr.go" --old-line 10
 ```
 
 ### Issues
@@ -243,7 +246,7 @@ This will:
 1. Run tests
 2. Build cross-platform binaries (linux/darwin/windows, amd64/arm64)
 3. Create a GitHub Release with archives and checksums
-4. Update the Homebrew formula in the `HomebrewFormula` directory
+4. Update the Homebrew cask in the `Casks` directory
 5. Publish deb/rpm packages
 
 ### Shell Completions

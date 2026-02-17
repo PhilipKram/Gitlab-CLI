@@ -403,8 +403,8 @@ func newMRMergeCmd(f *cmdutil.Factory) *cobra.Command {
 			}
 
 			if whenPipeline == "succeeds" {
-				pipelineSuccess := true
-				opts.MergeWhenPipelineSucceeds = &pipelineSuccess
+				autoMerge := true
+				opts.AutoMerge = &autoMerge
 			}
 
 			mr, _, err := client.MergeRequests.AcceptMergeRequest(project, mrID, opts)
@@ -616,12 +616,24 @@ func newMRDiffCmd(f *cmdutil.Factory) *cobra.Command {
 }
 
 func newMRCommentCmd(f *cmdutil.Factory) *cobra.Command {
-	var body string
+	var (
+		body    string
+		file    string
+		line    int64
+		oldLine int64
+		commit  string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "comment [<id>]",
 		Short: "Add a comment to a merge request",
-		Example: `  $ glab mr comment 123 --body "Looks good!"`,
+		Long: `Add a comment to a merge request.
+
+Without --file, adds a regular comment. With --file and --line, adds an
+inline diff comment on the specified file and line.`,
+		Example: `  $ glab mr comment 123 --body "Looks good!"
+  $ glab mr comment 123 --body "Consider refactoring this" --file "cmd/mr.go" --line 42
+  $ glab mr comment 123 --body "Good that this was removed" --file "cmd/mr.go" --old-line 10`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := f.Client()
 			if err != nil {
@@ -638,6 +650,53 @@ func newMRCommentCmd(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 
+			// Inline diff comment when --file is provided
+			if cmd.Flags().Changed("file") {
+				if !cmd.Flags().Changed("line") && !cmd.Flags().Changed("old-line") {
+					return fmt.Errorf("--file requires at least one of --line or --old-line")
+				}
+
+				mr, _, err := client.MergeRequests.GetMergeRequest(project, mrID, nil)
+				if err != nil {
+					return fmt.Errorf("getting merge request: %w", err)
+				}
+
+				posType := "text"
+				position := &gitlab.PositionOptions{
+					BaseSHA:      &mr.DiffRefs.BaseSha,
+					HeadSHA:      &mr.DiffRefs.HeadSha,
+					StartSHA:     &mr.DiffRefs.StartSha,
+					NewPath:      &file,
+					OldPath:      &file,
+					PositionType: &posType,
+				}
+
+				if cmd.Flags().Changed("line") {
+					position.NewLine = &line
+				}
+				if cmd.Flags().Changed("old-line") {
+					position.OldLine = &oldLine
+				}
+
+				opts := &gitlab.CreateMergeRequestDiscussionOptions{
+					Body:     &body,
+					Position: position,
+				}
+
+				if commit != "" {
+					opts.CommitID = &commit
+				}
+
+				discussion, _, err := client.Discussions.CreateMergeRequestDiscussion(project, mrID, opts)
+				if err != nil {
+					return fmt.Errorf("adding inline comment: %w", err)
+				}
+
+				fmt.Fprintf(f.IOStreams.Out, "Added inline comment to !%d on %s\n%s\n", mrID, file, discussion.Notes[0].Body)
+				return nil
+			}
+
+			// Regular comment
 			opts := &gitlab.CreateMergeRequestNoteOptions{
 				Body: &body,
 			}
@@ -653,6 +712,10 @@ func newMRCommentCmd(f *cmdutil.Factory) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&body, "body", "b", "", "Comment body (required)")
+	cmd.Flags().StringVarP(&file, "file", "f", "", "File path in the diff for inline comment")
+	cmd.Flags().Int64VarP(&line, "line", "l", 0, "Line number in the new version of the file")
+	cmd.Flags().Int64Var(&oldLine, "old-line", 0, "Line number in the old version of the file")
+	cmd.Flags().StringVar(&commit, "commit", "", "Specific commit SHA to comment on")
 	_ = cmd.MarkFlagRequired("body")
 
 	return cmd

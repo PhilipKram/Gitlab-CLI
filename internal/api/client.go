@@ -5,6 +5,7 @@ import (
 
 	"github.com/PhilipKram/gitlab-cli/internal/config"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
+	"golang.org/x/oauth2"
 )
 
 // Client wraps the GitLab API client.
@@ -46,7 +47,8 @@ func NewClientWithToken(host, token string) (*Client, error) {
 // NewOAuthClient creates a new GitLab API client using an OAuth token.
 func NewOAuthClient(host, token string) (*Client, error) {
 	baseURL := APIURL(host)
-	client, err := gitlab.NewOAuthClient(token, gitlab.WithBaseURL(baseURL))
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+	client, err := gitlab.NewAuthSourceClient(gitlab.OAuthTokenSource{TokenSource: ts}, gitlab.WithBaseURL(baseURL))
 	if err != nil {
 		return nil, fmt.Errorf("creating GitLab OAuth client: %w", err)
 	}

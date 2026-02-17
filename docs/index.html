@@ -396,7 +396,7 @@
                 <tr><td>glab mr approve &lt;id&gt;</td><td>Approve a merge request</td></tr>
                 <tr><td>glab mr checkout &lt;id&gt;</td><td>Check out the MR branch locally</td></tr>
                 <tr><td>glab mr diff &lt;id&gt;</td><td>View the diff of a merge request</td></tr>
-                <tr><td>glab mr comment &lt;id&gt;</td><td>Add a comment to a merge request</td></tr>
+                <tr><td>glab mr comment &lt;id&gt;</td><td>Add a comment to a merge request (use --file and --line for inline diff comments)</td></tr>
                 <tr><td>glab mr edit &lt;id&gt;</td><td>Edit merge request properties</td></tr>
             </table>
         </div>
@@ -498,6 +498,10 @@
 
 <span class="comment"># Check out a teammate's MR for review</span>
 <span class="cmd">glab mr checkout 42</span>
+
+<span class="comment"># Leave an inline comment on the diff</span>
+<span class="cmd">glab mr comment 42 --body "Consider refactoring this" \
+  --file "src/auth.go" --line 57</span>
 
 <span class="comment"># Approve and merge</span>
 <span class="cmd">glab mr approve 42</span>

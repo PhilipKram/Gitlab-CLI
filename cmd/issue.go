@@ -210,8 +210,8 @@ func newIssueListCmd(f *cmdutil.Factory) *cobra.Command {
 			tp := tableprinter.New(f.IOStreams.Out)
 			for _, issue := range issues {
 				assigneeStr := ""
-				if issue.Assignee != nil {
-					assigneeStr = issue.Assignee.Username
+				if len(issue.Assignees) > 0 {
+					assigneeStr = issue.Assignees[0].Username
 				}
 				tp.AddRow(
 					fmt.Sprintf("#%d", issue.IID),
@@ -285,8 +285,12 @@ func newIssueViewCmd(f *cmdutil.Factory) *cobra.Command {
 			fmt.Fprintf(out, "#%d %s\n", issue.IID, issue.Title)
 			fmt.Fprintf(out, "State:   %s\n", issue.State)
 			fmt.Fprintf(out, "Author:  %s\n", issue.Author.Username)
-			if issue.Assignee != nil {
-				fmt.Fprintf(out, "Assignee: %s\n", issue.Assignee.Username)
+			if len(issue.Assignees) > 0 {
+				var names []string
+				for _, a := range issue.Assignees {
+					names = append(names, a.Username)
+				}
+				fmt.Fprintf(out, "Assignee: %s\n", strings.Join(names, ", "))
 			}
 			if len(issue.Labels) > 0 {
 				fmt.Fprintf(out, "Labels:  %s\n", strings.Join(issue.Labels, ", "))

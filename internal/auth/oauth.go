@@ -16,6 +16,7 @@ import (
 
 	"github.com/PhilipKram/gitlab-cli/internal/config"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
+	"golang.org/x/oauth2"
 )
 
 const (
@@ -87,7 +88,8 @@ func OAuthFlow(host, clientID string, out io.Writer, openBrowser func(string) er
 	}
 
 	// Validate the token
-	client, err := gitlab.NewOAuthClient(tokenResp.AccessToken, gitlab.WithBaseURL(apiURL(host)))
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: tokenResp.AccessToken})
+	client, err := gitlab.NewAuthSourceClient(gitlab.OAuthTokenSource{TokenSource: ts}, gitlab.WithBaseURL(apiURL(host)))
 	if err != nil {
 		return nil, fmt.Errorf("creating GitLab client: %w", err)
 	}
@@ -178,7 +180,7 @@ func waitForCallback(listener net.Listener, expectedState string) (string, error
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		server.Shutdown(ctx)
+		_ = server.Shutdown(ctx)
 	}()
 
 	// Wait with a timeout

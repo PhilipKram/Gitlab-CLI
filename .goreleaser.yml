@@ -25,13 +25,15 @@ builds:
 
 archives:
   - id: glab-archive
-    builds:
+    ids:
       - glab
-    format: tar.gz
+    formats:
+      - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     files:
       - README.md
       - LICENSE
@@ -51,24 +53,21 @@ changelog:
       - "^ci:"
       - "^chore:"
 
-brews:
+homebrew_casks:
   - name: glab
     ids:
       - glab-archive
+    binaries:
+      - glab
     repository:
       owner: PhilipKram
       name: Gitlab-CLI
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: HomebrewFormula
+    directory: Casks
     homepage: "https://philipkram.github.io/Gitlab-CLI/"
     description: "A CLI tool for GitLab, similar to GitHub CLI (gh)"
-    license: "MIT"
-    install: |
-      bin.install "glab"
-    test: |
-      assert_match "glab version", shell_output("#{bin}/glab --version")
     dependencies:
-      - name: git
+      - formula: git
 
 nfpms:
   - id: glab-nfpm
