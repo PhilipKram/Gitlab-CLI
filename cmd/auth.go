@@ -29,6 +29,8 @@ func newAuthLoginCmd(f *cmdutil.Factory) *cobra.Command {
 	var hostname string
 	var token string
 	var stdin bool
+	var web bool
+	var clientID string
 
 	cmd := &cobra.Command{
 		Use:   "login",
@@ -37,19 +39,46 @@ func newAuthLoginCmd(f *cmdutil.Factory) *cobra.Command {
 
 The default hostname is gitlab.com. Override with --hostname.
 
-A personal access token can be provided via --token or piped through stdin.
+Authentication methods:
+  - Personal access token: provide via --token or pipe through stdin
+  - OAuth (browser-based): use --web with --client-id
+
+For OAuth, you must first create an OAuth application in your GitLab instance
+under Settings > Applications. Set the redirect URI to http://127.0.0.1 (any port)
+and enable the "api", "read_user", and "read_repository" scopes.
+
 Required scopes: api, read_user, read_repository.`,
 		Example: `  # Authenticate with a token
   $ glab auth login --token glpat-xxxxxxxxxxxxxxxxxxxx
 
+  # Authenticate via OAuth in browser
+  $ glab auth login --web --client-id <your-app-id>
+
   # Authenticate with a self-hosted instance
   $ glab auth login --hostname gitlab.example.com --token glpat-xxxx
+
+  # OAuth with a self-hosted instance
+  $ glab auth login --web --client-id <your-app-id> --hostname gitlab.example.com
 
   # Pipe a token from a file
   $ glab auth login --stdin < token.txt`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if hostname == "" {
 				hostname = config.DefaultHost()
+			}
+
+			if web {
+				if clientID == "" {
+					return fmt.Errorf("--client-id is required for OAuth login; create an application at https://%s/-/user_settings/applications", hostname)
+				}
+
+				status, err := auth.OAuthFlow(hostname, clientID, f.IOStreams.ErrOut)
+				if err != nil {
+					return err
+				}
+
+				fmt.Fprintf(f.IOStreams.Out, "Logged in to %s as %s (via OAuth)\n", status.Host, status.User)
+				return nil
 			}
 
 			var stdinReader = f.IOStreams.In
@@ -70,6 +99,8 @@ Required scopes: api, read_user, read_repository.`,
 	cmd.Flags().StringVarP(&hostname, "hostname", "h", "", "GitLab hostname (default: gitlab.com)")
 	cmd.Flags().StringVarP(&token, "token", "t", "", "Personal access token")
 	cmd.Flags().BoolVar(&stdin, "stdin", false, "Read token from stdin")
+	cmd.Flags().BoolVarP(&web, "web", "w", false, "Authenticate via OAuth in the browser")
+	cmd.Flags().StringVar(&clientID, "client-id", "", "OAuth application ID (required with --web)")
 
 	return cmd
 }
@@ -116,6 +147,9 @@ func newAuthStatusCmd(f *cmdutil.Factory) *cobra.Command {
 				fmt.Fprintf(out, "  Logged in as: %s\n", s.User)
 				fmt.Fprintf(out, "  Token: %s\n", s.Token)
 				fmt.Fprintf(out, "  Token source: %s\n", s.Source)
+				if s.AuthMethod != "" {
+					fmt.Fprintf(out, "  Auth method: %s\n", s.AuthMethod)
+				}
 				if s.HasError {
 					fmt.Fprintf(out, "  Error: %s\n", s.Error)
 				}
