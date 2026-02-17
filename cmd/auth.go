@@ -134,7 +134,7 @@ Required token scopes: api, read_user, read_repository.`,
 		},
 	}
 
-	cmd.Flags().StringVarP(&hostname, "hostname", "h", "", "GitLab hostname (default: gitlab.com)")
+	cmd.Flags().StringVar(&hostname, "hostname", "", "GitLab hostname (default: gitlab.com)")
 	cmd.Flags().StringVarP(&token, "token", "t", "", "Personal access token")
 	cmd.Flags().BoolVar(&stdin, "stdin", false, "Read token from stdin")
 	cmd.Flags().BoolVarP(&web, "web", "w", false, "Authenticate via OAuth in the browser")
