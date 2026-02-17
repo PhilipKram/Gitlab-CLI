@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -30,6 +31,64 @@ type HostConfig struct {
 	Protocol   string `json:"protocol,omitempty"`
 	APIHost    string `json:"api_host,omitempty"`
 	AuthMethod string `json:"auth_method,omitempty"` // "pat" or "oauth"
+	ClientID   string `json:"client_id,omitempty"`
+}
+
+// HostKeys returns valid per-host config keys.
+func HostKeys() []string {
+	return []string{"client_id", "protocol", "api_host"}
+}
+
+// GetHostValue returns a per-host config value by key.
+func GetHostValue(host, key string) (string, error) {
+	hosts, err := LoadHosts()
+	if err != nil {
+		return "", err
+	}
+	hc, ok := hosts[host]
+	if !ok {
+		return "", fmt.Errorf("no configuration for host: %s", host)
+	}
+	switch key {
+	case "client_id":
+		return hc.ClientID, nil
+	case "protocol":
+		return hc.Protocol, nil
+	case "api_host":
+		return hc.APIHost, nil
+	case "token":
+		return hc.Token, nil
+	case "user":
+		return hc.User, nil
+	case "auth_method":
+		return hc.AuthMethod, nil
+	default:
+		return "", fmt.Errorf("unknown host config key: %s", key)
+	}
+}
+
+// SetHostValue sets a per-host config value by key.
+func SetHostValue(host, key, value string) error {
+	hosts, err := LoadHosts()
+	if err != nil {
+		hosts = make(HostsConfig)
+	}
+	hc, ok := hosts[host]
+	if !ok {
+		hc = &HostConfig{}
+		hosts[host] = hc
+	}
+	switch key {
+	case "client_id":
+		hc.ClientID = value
+	case "protocol":
+		hc.Protocol = value
+	case "api_host":
+		hc.APIHost = value
+	default:
+		return fmt.Errorf("unknown host config key: %s\nValid keys: %s", key, strings.Join(HostKeys(), ", "))
+	}
+	return SaveHosts(hosts)
 }
 
 // HostsConfig maps hostnames to their configurations.
@@ -180,6 +239,18 @@ func AuthMethodForHost(host string) string {
 	}
 	if hc, ok := hosts[host]; ok {
 		return hc.AuthMethod
+	}
+	return ""
+}
+
+// ClientIDForHost returns the stored OAuth client ID for a given host.
+func ClientIDForHost(host string) string {
+	hosts, err := LoadHosts()
+	if err != nil {
+		return ""
+	}
+	if hc, ok := hosts[host]; ok {
+		return hc.ClientID
 	}
 	return ""
 }

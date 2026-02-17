@@ -90,7 +90,10 @@ Required token scopes: api, read_user, read_repository.`,
 
 			if web {
 				if clientID == "" {
-					return fmt.Errorf("--client-id is required for OAuth login; create an application at https://%s/-/user_settings/applications", hostname)
+					clientID = config.ClientIDForHost(hostname)
+				}
+				if clientID == "" {
+					return fmt.Errorf("--client-id is required for OAuth login (or set it with: glab config set client_id <app-id> --host %s)", hostname)
 				}
 
 				status, err := auth.OAuthFlow(hostname, clientID, errOut, browser.Open)
@@ -198,6 +201,9 @@ func loginInteractive(f *cmdutil.Factory, presetHost, presetProto, presetClientI
 	if idx == 0 {
 		// OAuth (web browser) flow
 		clientID := presetClientID
+		if clientID == "" {
+			clientID = config.ClientIDForHost(hostname)
+		}
 		if clientID == "" {
 			clientID, err = prompt.Input(in, errOut,
 				fmt.Sprintf("OAuth Application ID (create one at https://%s/-/user_settings/applications):", hostname))
