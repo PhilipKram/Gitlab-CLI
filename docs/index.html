@@ -298,9 +298,9 @@
                 <code>glab &lt;noun&gt; &lt;verb&gt; [flags]</code>
             </div>
             <div class="feature">
-                <h3>Self-Hosted Support</h3>
-                <p>Works with gitlab.com and any self-hosted GitLab instance. Configure multiple hosts.</p>
-                <code>glab auth login --hostname gitlab.internal</code>
+                <h3>OAuth &amp; Self-Hosted</h3>
+                <p>Login interactively via browser OAuth or personal access tokens. Works with gitlab.com and any self-hosted instance.</p>
+                <code>glab auth login</code>
             </div>
         </div>
     </div>
@@ -335,16 +335,35 @@
         </div>
 
         <h3>Authentication</h3>
-        <p style="margin-bottom: 12px;">After installing, authenticate with your GitLab instance:</p>
-<pre><code><span class="comment"># Login with a personal access token</span>
+        <p style="margin-bottom: 12px;">After installing, authenticate with your GitLab instance. The interactive flow guides you step by step, just like the GitHub CLI:</p>
+<pre><code><span class="comment"># Interactive login (recommended) — prompts for host, protocol, and auth method</span>
+<span class="cmd">glab auth login</span>
+
+<span class="comment"># OAuth login via browser (requires an OAuth application)</span>
+<span class="cmd">glab auth login --web --client-id &lt;your-app-id&gt;</span>
+
+<span class="comment"># Login with a personal access token</span>
 <span class="cmd">glab auth login --token glpat-xxxxxxxxxxxxxxxxxxxx</span>
 
-<span class="comment"># Or for self-hosted instances</span>
+<span class="comment"># Self-hosted instance</span>
 <span class="cmd">glab auth login --hostname gitlab.example.com --token glpat-xxxx</span>
 
 <span class="comment"># Or set an environment variable</span>
 <span class="cmd">export GITLAB_TOKEN="glpat-xxxxxxxxxxxxxxxxxxxx"</span></code></pre>
         <p style="margin-top: 8px; color: var(--text-muted); font-size: 0.9rem;">Required token scopes: <code>api</code>, <code>read_user</code>, <code>read_repository</code></p>
+
+        <h3 style="margin-top: 24px;">OAuth Setup</h3>
+        <p style="margin-bottom: 8px; color: var(--text-muted); font-size: 0.9rem;">
+            To use OAuth browser-based login, first create an OAuth application in your GitLab instance
+            under <strong>Settings &gt; Applications</strong>:
+        </p>
+        <ul style="color: var(--text-muted); font-size: 0.9rem; padding-left: 20px; margin-bottom: 8px;">
+            <li>Redirect URI: <code>http://127.0.0.1</code> (any port)</li>
+            <li>Scopes: <code>api</code>, <code>read_user</code>, <code>read_repository</code></li>
+        </ul>
+        <p style="color: var(--text-muted); font-size: 0.9rem;">
+            The CLI starts a local server, opens your browser for authorization, and exchanges the code for a token using PKCE — no client secret needed.
+        </p>
     </div>
 </section>
 
@@ -355,9 +374,11 @@
         <div class="cmd-group">
             <h3>Core Commands</h3>
             <table class="cmd-table">
-                <tr><td>glab auth login</td><td>Authenticate with a GitLab instance</td></tr>
+                <tr><td>glab auth login</td><td>Authenticate interactively (prompts for host, protocol, and method)</td></tr>
+                <tr><td>glab auth login --web</td><td>Authenticate via OAuth in the browser</td></tr>
+                <tr><td>glab auth login --token</td><td>Authenticate with a personal access token</td></tr>
                 <tr><td>glab auth logout</td><td>Log out of a GitLab instance</td></tr>
-                <tr><td>glab auth status</td><td>View authentication status</td></tr>
+                <tr><td>glab auth status</td><td>View authentication status (shows auth method)</td></tr>
                 <tr><td>glab auth token</td><td>Print the stored auth token</td></tr>
             </table>
         </div>
