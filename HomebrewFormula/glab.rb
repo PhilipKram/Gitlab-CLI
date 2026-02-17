@@ -5,23 +5,23 @@
 class Glab < Formula
   desc "A CLI tool for GitLab, similar to GitHub CLI (gh)"
   homepage "https://philipkram.github.io/Gitlab-CLI/"
-  version "0.0.5"
+  version "0.0.6"
   license "MIT"
 
   depends_on "git"
 
   on_macos do
     if Hardware::CPU.intel?
-      url "https://github.com/PhilipKram/Gitlab-CLI/releases/download/v0.0.5/glab_0.0.5_darwin_amd64.tar.gz"
-      sha256 "e7797e2dd2428ac1a8507684e5847cf8e44dcdc1c1f9b75c74da9b05552aa54c"
+      url "https://github.com/PhilipKram/Gitlab-CLI/releases/download/v0.0.6/glab_0.0.6_darwin_amd64.tar.gz"
+      sha256 "d6bf3b40508ce1ce935f05225bfa6528cf35773c3c881ace8a0194d5e4837936"
 
       def install
         bin.install "glab"
       end
     end
     if Hardware::CPU.arm?
-      url "https://github.com/PhilipKram/Gitlab-CLI/releases/download/v0.0.5/glab_0.0.5_darwin_arm64.tar.gz"
-      sha256 "7682680304c15476f5b75c9c3cd0fdc9fe86cc588e1720637328e51803065a4a"
+      url "https://github.com/PhilipKram/Gitlab-CLI/releases/download/v0.0.6/glab_0.0.6_darwin_arm64.tar.gz"
+      sha256 "06d6d2b8fb175eff5b688e1ef64e0a20cdf8a82d228d134da35e8fcede482052"
 
       def install
         bin.install "glab"
@@ -31,15 +31,15 @@ class Glab < Formula
 
   on_linux do
     if Hardware::CPU.intel? && Hardware::CPU.is_64_bit?
-      url "https://github.com/PhilipKram/Gitlab-CLI/releases/download/v0.0.5/glab_0.0.5_linux_amd64.tar.gz"
-      sha256 "406350485e9424aad701d24faf2983810410d4164c43de1e1e33ce225469a39c"
+      url "https://github.com/PhilipKram/Gitlab-CLI/releases/download/v0.0.6/glab_0.0.6_linux_amd64.tar.gz"
+      sha256 "aab11c3c31330dfd6d94257af53ddff77bcea3247d52e5f3763e9461e1e9b1e8"
       def install
         bin.install "glab"
       end
     end
     if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
-      url "https://github.com/PhilipKram/Gitlab-CLI/releases/download/v0.0.5/glab_0.0.5_linux_arm64.tar.gz"
-      sha256 "9cd21f5ddf2082169041562b0eb45c3c0c73a4ca0a25034c5496b3b57b493c52"
+      url "https://github.com/PhilipKram/Gitlab-CLI/releases/download/v0.0.6/glab_0.0.6_linux_arm64.tar.gz"
+      sha256 "921943b4a69549183f5481f03ee706d377a1b2ba42050a46ccf4bd6b1e215b30"
       def install
         bin.install "glab"
       end
