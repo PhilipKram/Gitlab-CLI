@@ -33,7 +33,8 @@ type OAuthTokenResponse struct {
 }
 
 // OAuthFlow performs the OAuth2 Authorization Code flow with PKCE.
-func OAuthFlow(host, clientID string, out io.Writer) (*Status, error) {
+// openBrowser is called with the authorization URL; pass nil to skip auto-open.
+func OAuthFlow(host, clientID string, out io.Writer, openBrowser func(string) error) (*Status, error) {
 	// Start a local server to receive the callback
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -58,8 +59,20 @@ func OAuthFlow(host, clientID string, out io.Writer) (*Status, error) {
 	// Build authorization URL
 	authURL := buildAuthURL(host, clientID, redirectURI, state, codeChallenge)
 
-	fmt.Fprintf(out, "Open this URL in your browser to authenticate:\n%s\n\n", authURL)
-	fmt.Fprintf(out, "Waiting for authentication...\n")
+	// Try to open browser automatically
+	browserOpened := false
+	if openBrowser != nil {
+		if err := openBrowser(authURL); err == nil {
+			browserOpened = true
+		}
+	}
+
+	if browserOpened {
+		fmt.Fprintf(out, "! Opening %s in your browser...\n", host)
+	} else {
+		fmt.Fprintf(out, "! Open this URL in your browser to authenticate:\n  %s\n", authURL)
+	}
+	fmt.Fprintf(out, "- Waiting for authentication...\n")
 
 	// Wait for the callback
 	code, err := waitForCallback(listener, state)
