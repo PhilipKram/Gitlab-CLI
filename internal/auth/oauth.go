@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	defaultScopes = "api read_user read_repository"
+	defaultScopes = "openid profile api read_user write_repository"
 )
 
 // OAuthTokenResponse represents the response from GitLab's OAuth token endpoint.
@@ -36,7 +36,11 @@ type OAuthTokenResponse struct {
 // OAuthFlow performs the OAuth2 Authorization Code flow with PKCE.
 // openBrowser is called with the authorization URL; pass nil to skip auto-open.
 // If redirectURI is empty, a default is used with a random port.
-func OAuthFlow(host, clientID, redirectURI string, out io.Writer, openBrowser func(string) error) (*Status, error) {
+// If scopes is empty, defaultScopes is used.
+func OAuthFlow(host, clientID, redirectURI, scopes string, out io.Writer, openBrowser func(string) error) (*Status, error) {
+	if scopes == "" {
+		scopes = defaultScopes
+	}
 	// Parse redirect URI to determine listen address and callback path
 	listenAddr := "127.0.0.1:0"
 	callbackPath := "/callback"
@@ -81,7 +85,7 @@ func OAuthFlow(host, clientID, redirectURI string, out io.Writer, openBrowser fu
 	}
 
 	// Build authorization URL
-	authURL := buildAuthURL(host, clientID, redirectURI, state, codeChallenge)
+	authURL := buildAuthURL(host, clientID, redirectURI, state, codeChallenge, scopes)
 
 	// Try to open browser automatically
 	browserOpened := false
@@ -147,13 +151,13 @@ func OAuthFlow(host, clientID, redirectURI string, out io.Writer, openBrowser fu
 	}, nil
 }
 
-func buildAuthURL(host, clientID, redirectURI, state, codeChallenge string) string {
+func buildAuthURL(host, clientID, redirectURI, state, codeChallenge, scopes string) string {
 	baseURL := fmt.Sprintf("https://%s/oauth/authorize", host)
 	params := url.Values{
 		"client_id":             {clientID},
 		"redirect_uri":          {redirectURI},
 		"response_type":         {"code"},
-		"scope":                 {defaultScopes},
+		"scope":                 {scopes},
 		"state":                 {state},
 		"code_challenge":        {codeChallenge},
 		"code_challenge_method": {"S256"},

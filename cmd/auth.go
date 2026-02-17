@@ -97,7 +97,8 @@ Required token scopes: api, read_user, read_repository.`,
 				}
 
 				redirectURI := config.RedirectURIForHost(hostname)
-				status, err := auth.OAuthFlow(hostname, clientID, redirectURI, errOut, browser.Open)
+				scopes := config.OAuthScopesForHost(hostname)
+				status, err := auth.OAuthFlow(hostname, clientID, redirectURI, scopes, errOut, browser.Open)
 				if err != nil {
 					return err
 				}
@@ -218,7 +219,8 @@ func loginInteractive(f *cmdutil.Factory, presetHost, presetProto, presetClientI
 
 		fmt.Fprintln(errOut)
 		redirectURI := config.RedirectURIForHost(hostname)
-		status, err = auth.OAuthFlow(hostname, clientID, redirectURI, errOut, browser.Open)
+		scopes := config.OAuthScopesForHost(hostname)
+		status, err = auth.OAuthFlow(hostname, clientID, redirectURI, scopes, errOut, browser.Open)
 		if err != nil {
 			return err
 		}

@@ -33,11 +33,12 @@ type HostConfig struct {
 	AuthMethod  string `json:"auth_method,omitempty"` // "pat" or "oauth"
 	ClientID    string `json:"client_id,omitempty"`
 	RedirectURI string `json:"redirect_uri,omitempty"`
+	OAuthScopes string `json:"oauth_scopes,omitempty"`
 }
 
 // HostKeys returns valid per-host config keys.
 func HostKeys() []string {
-	return []string{"client_id", "redirect_uri", "protocol", "api_host"}
+	return []string{"client_id", "redirect_uri", "oauth_scopes", "protocol", "api_host"}
 }
 
 // GetHostValue returns a per-host config value by key.
@@ -55,6 +56,8 @@ func GetHostValue(host, key string) (string, error) {
 		return hc.ClientID, nil
 	case "redirect_uri":
 		return hc.RedirectURI, nil
+	case "oauth_scopes":
+		return hc.OAuthScopes, nil
 	case "protocol":
 		return hc.Protocol, nil
 	case "api_host":
@@ -86,6 +89,8 @@ func SetHostValue(host, key, value string) error {
 		hc.ClientID = value
 	case "redirect_uri":
 		hc.RedirectURI = value
+	case "oauth_scopes":
+		hc.OAuthScopes = value
 	case "protocol":
 		hc.Protocol = value
 	case "api_host":
@@ -244,6 +249,18 @@ func AuthMethodForHost(host string) string {
 	}
 	if hc, ok := hosts[host]; ok {
 		return hc.AuthMethod
+	}
+	return ""
+}
+
+// OAuthScopesForHost returns the stored OAuth scopes for a given host.
+func OAuthScopesForHost(host string) string {
+	hosts, err := LoadHosts()
+	if err != nil {
+		return ""
+	}
+	if hc, ok := hosts[host]; ok {
+		return hc.OAuthScopes
 	}
 	return ""
 }
