@@ -1,0 +1,18 @@
+[
+  {
+    "key": "IMPORT_VAR",
+    "value": "import-value",
+    "variable_type": "env_var",
+    "protected": false,
+    "masked": false,
+    "environment_scope": "*"
+  },
+  {
+    "key": "IMPORT_VAR2",
+    "value": "import-value2",
+    "variable_type": "env_var",
+    "protected": true,
+    "masked": true,
+    "environment_scope": "production"
+  }
+]

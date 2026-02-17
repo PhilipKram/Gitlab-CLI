@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ["1.24"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit Tests
+        run: |
+          echo "Starting unit tests at $(date +%s)" > test-timing.txt
+          # Run unit tests excluding integration and e2e tests
+          go test -v -race -coverprofile=unit-coverage.out $(go list ./... | grep -v '/tests/')
+          echo "Unit tests completed at $(date +%s)" >> test-timing.txt
+
+      - name: Integration Tests
+        run: |
+          echo "Starting integration tests at $(date +%s)" >> test-timing.txt
+          # Run integration tests with coverage
+          go test -v -race -coverprofile=integration-coverage.out ./tests/integration/...
+          echo "Integration tests completed at $(date +%s)" >> test-timing.txt
+
+      - name: Merge Coverage
+        if: matrix.go-version == '1.24'
+        run: |
+          # Install gocovmerge for merging coverage files
+          go install github.com/wadey/gocovmerge@latest
+          # Merge unit and integration coverage
+          gocovmerge unit-coverage.out integration-coverage.out > coverage.out
+          echo "## Test Timing" >> $GITHUB_STEP_SUMMARY
+          cat test-timing.txt >> $GITHUB_STEP_SUMMARY
+
+      - name: Check test performance
+        if: matrix.go-version == '1.24'
+        run: |
+          # Calculate total test execution time
+          START_TIME=$(head -1 test-timing.txt | awk '{print $5}')
+          END_TIME=$(tail -1 test-timing.txt | awk '{print $5}')
+          DURATION=$((END_TIME - START_TIME))
+          echo "Total test execution time: ${DURATION} seconds"
+          echo "test_duration=${DURATION}" >> $GITHUB_OUTPUT
+          # Check if under 60 second target
+          if [ $DURATION -lt 60 ]; then
+            echo "✅ Test performance target met (${DURATION}s < 60s)"
+          else
+            echo "⚠️  Tests took longer than 60 second target (${DURATION}s)"
+          fi
+
+      - name: Generate coverage report
+        if: matrix.go-version == '1.24'
+        run: |
+          go tool cover -html=coverage.out -o coverage.html
+          echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=coverage.out | tail -20 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Check coverage target
+        if: matrix.go-version == '1.24'
+        run: |
+          # Extract total coverage percentage
+          TOTAL_COVERAGE=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: ${TOTAL_COVERAGE}%"
+          # Set output for visibility
+          echo "coverage=${TOTAL_COVERAGE}" >> $GITHUB_OUTPUT
+          # Fail the build if coverage drops below 70% target
+          if (( $(echo "$TOTAL_COVERAGE < 70" | bc -l) )); then
+            echo "::error::Coverage is below 70% target (current: ${TOTAL_COVERAGE}%)"
+            exit 1
+          else
+            echo "✅ Coverage meets 70% target (current: ${TOTAL_COVERAGE}%)"
+          fi
+
+      - name: Upload coverage reports
+        if: matrix.go-version == '1.24'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage.out
+            coverage.html
+            unit-coverage.out
+            integration-coverage.out
+            test-timing.txt
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          ext=""
+          if [ "$GOOS" = "windows" ]; then ext=".exe"; fi
+          go build -ldflags "-s -w -X main.version=dev" -o "glab-${GOOS}-${GOARCH}${ext}" .
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: glab-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: glab-*
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest

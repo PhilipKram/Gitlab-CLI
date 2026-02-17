@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="120" viewBox="0 0 600 120">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FC6D26;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E24329;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="600" height="120" rx="8" fill="url(#bg)"/>
+  <!-- GitLab tanuki icon (simplified) -->
+  <g transform="translate(30, 20)">
+    <path d="M35 70L19 22.5 4 70z" fill="white" opacity="0.95"/>
+    <path d="M35 70L51 22.5 66 70z" fill="white" opacity="0.95"/>
+    <path d="M4 70l-4-12 15-35.5L35 70z" fill="white" opacity="0.75"/>
+    <path d="M66 70l4-12-15-35.5L35 70z" fill="white" opacity="0.75"/>
+    <path d="M0 58l4 12h31L19 22.5z" fill="white" opacity="0.85"/>
+    <path d="M70 58l-4 12H35L51 22.5z" fill="white" opacity="0.85"/>
+  </g>
+  <!-- Text -->
+  <text x="120" y="52" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="white">glab</text>
+  <text x="120" y="80" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="white" opacity="0.9">GitLab CLI — New Release</text>
+  <!-- Rocket icon -->
+  <text x="540" y="68" font-size="42" text-anchor="middle">🚀</text>
+</svg>

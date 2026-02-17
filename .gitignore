@@ -1,0 +1,18 @@
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Build artifacts
+/glab
+coverage.html

@@ -1,0 +1,34 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read(./**)",
+      "Write(./**)",
+      "Edit(./**)",
+      "Glob(./**)",
+      "Grep(./**)",
+      "Read(/Users/philipkramer/Project/private/Gitlab-CLI/**)",
+      "Write(/Users/philipkramer/Project/private/Gitlab-CLI/**)",
+      "Edit(/Users/philipkramer/Project/private/Gitlab-CLI/**)",
+      "Glob(/Users/philipkramer/Project/private/Gitlab-CLI/**)",
+      "Grep(/Users/philipkramer/Project/private/Gitlab-CLI/**)",
+      "Read(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/roadmap/**)",
+      "Write(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/roadmap/**)",
+      "Edit(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/roadmap/**)",
+      "Bash(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "mcp__context7__resolve-library-id(*)",
+      "mcp__context7__query-docs(*)",
+      "mcp__graphiti-memory__search_nodes(*)",
+      "mcp__graphiti-memory__search_facts(*)",
+      "mcp__graphiti-memory__add_episode(*)",
+      "mcp__graphiti-memory__get_episodes(*)",
+      "mcp__graphiti-memory__get_entity_edge(*)"
+    ]
+  }
+}
