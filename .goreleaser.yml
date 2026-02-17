@@ -53,21 +53,23 @@ changelog:
       - "^ci:"
       - "^chore:"
 
-homebrew_casks:
+brews:
   - name: glab
     ids:
       - glab-archive
-    binaries:
-      - glab
     repository:
       owner: PhilipKram
-      name: Gitlab-CLI
+      name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Casks
     homepage: "https://philipkram.github.io/Gitlab-CLI/"
     description: "A CLI tool for GitLab, similar to GitHub CLI (gh)"
+    license: "MIT"
+    install: |
+      bin.install "glab"
+    test: |
+      assert_match "glab version", shell_output("#{bin}/glab --version")
     dependencies:
-      - formula: git
+      - name: git
 
 nfpms:
   - id: glab-nfpm
