@@ -66,8 +66,8 @@ $ glab auth login
 
 Authenticate via OAuth in the browser. You first need to create an OAuth application
 in your GitLab instance under **Settings > Applications** with:
-- Redirect URI: `http://127.0.0.1` (any port)
-- Scopes: `api`, `read_user`, `read_repository`
+- Redirect URI: `http://localhost:7171/auth/redirect`
+- Scopes: `api`, `read_user`, `write_repository`, `openid`, `profile`
 
 ```bash
 # Interactive OAuth login
@@ -77,7 +77,7 @@ glab auth login --web --client-id <your-app-id>
 glab auth login --web --client-id <your-app-id> --hostname gitlab.example.com
 ```
 
-The CLI starts a local server, opens your browser for authorization, and
+The CLI starts a local server on port 7171, opens your browser for authorization, and
 automatically exchanges the code for a token using PKCE.
 
 ### Token-based login
@@ -99,18 +99,48 @@ glab auth status
 export GITLAB_TOKEN="glpat-xxxxxxxxxxxxxxxxxxxx"
 ```
 
-Required token scopes: `api`, `read_user`, `read_repository`
+Required token scopes: `api`, `read_user`, `write_repository`
 
 ### Auth login flags
 
 | Flag | Description |
 |------|-------------|
-| `--hostname, -h` | GitLab hostname (default: gitlab.com) |
+| `--hostname` | GitLab hostname (default: gitlab.com) |
 | `--token, -t` | Personal access token |
 | `--web, -w` | Authenticate via OAuth in the browser |
 | `--client-id` | OAuth application ID (required with `--web`) |
 | `--git-protocol, -p` | Preferred git protocol: `https` or `ssh` |
 | `--stdin` | Read token from standard input |
+
+### Per-host configuration
+
+Store OAuth settings per host so you don't need to pass them every time:
+
+```bash
+# Store OAuth client ID for a self-hosted instance
+glab config set client_id <app-id> --host gitlab.example.com
+
+# Store custom redirect URI (default: http://localhost:7171/auth/redirect)
+glab config set redirect_uri http://localhost:8080/callback --host gitlab.example.com
+
+# Store custom OAuth scopes
+glab config set oauth_scopes "api read_user write_repository" --host gitlab.example.com
+```
+
+## Global Flags
+
+| Flag | Description |
+|------|-------------|
+| `--repo, -R` | Select a GitLab repository using `HOST/OWNER/REPO` format |
+
+The `--repo` flag lets you target any project without being in its git repository:
+
+```bash
+glab issue list -R gitlab.example.com/owner/repo
+glab mr list --state opened -R gitlab.example.com/group/project
+```
+
+When no `--repo` is specified, glab resolves the host from the git remote. If the remote isn't a GitLab host, it falls back to the default host, then to the first authenticated host.
 
 ## Commands
 
@@ -200,6 +230,10 @@ glab repo list --owner my-group
 glab config set protocol ssh
 glab config set editor vim
 glab config list
+
+# Per-host config
+glab config set client_id <app-id> --host gitlab.example.com
+glab config get client_id --host gitlab.example.com
 ```
 
 ### Direct API Access
@@ -208,11 +242,16 @@ glab config list
 glab api projects
 glab api users --method GET
 glab api projects/:id/issues --method POST --body '{"title":"Bug"}'
+
+# Target a specific host
+glab api '/projects?membership=true' --hostname gitlab.example.com
 ```
 
 ## Configuration
 
 Configuration is stored in `~/.config/glab/`. Override with `GLAB_CONFIG_DIR`.
+
+### Global keys
 
 | Key | Description | Default |
 |-----|-------------|---------|
@@ -221,6 +260,16 @@ Configuration is stored in `~/.config/glab/`. Override with `GLAB_CONFIG_DIR`.
 | `browser` | Preferred web browser | - |
 | `protocol` | Git protocol (https/ssh) | https |
 | `git_remote` | Default git remote name | origin |
+
+### Per-host keys (use with `--host`)
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `client_id` | OAuth application ID | - |
+| `redirect_uri` | OAuth redirect URI | `http://localhost:7171/auth/redirect` |
+| `oauth_scopes` | OAuth scopes | `openid profile api read_user write_repository` |
+| `protocol` | Git protocol for this host | - |
+| `api_host` | API hostname override | - |
 
 ## Environment Variables
 

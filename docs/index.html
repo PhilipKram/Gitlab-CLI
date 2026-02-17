@@ -350,7 +350,7 @@
 
 <span class="comment"># Or set an environment variable</span>
 <span class="cmd">export GITLAB_TOKEN="glpat-xxxxxxxxxxxxxxxxxxxx"</span></code></pre>
-        <p style="margin-top: 8px; color: var(--text-muted); font-size: 0.9rem;">Required token scopes: <code>api</code>, <code>read_user</code>, <code>read_repository</code></p>
+        <p style="margin-top: 8px; color: var(--text-muted); font-size: 0.9rem;">Required token scopes: <code>api</code>, <code>read_user</code>, <code>write_repository</code></p>
 
         <h3 style="margin-top: 24px;">OAuth Setup</h3>
         <p style="margin-bottom: 8px; color: var(--text-muted); font-size: 0.9rem;">
@@ -358,18 +358,41 @@
             under <strong>Settings &gt; Applications</strong>:
         </p>
         <ul style="color: var(--text-muted); font-size: 0.9rem; padding-left: 20px; margin-bottom: 8px;">
-            <li>Redirect URI: <code>http://127.0.0.1</code> (any port)</li>
-            <li>Scopes: <code>api</code>, <code>read_user</code>, <code>read_repository</code></li>
+            <li>Redirect URI: <code>http://localhost:7171/auth/redirect</code></li>
+            <li>Scopes: <code>api</code>, <code>read_user</code>, <code>write_repository</code>, <code>openid</code>, <code>profile</code></li>
         </ul>
         <p style="color: var(--text-muted); font-size: 0.9rem;">
-            The CLI starts a local server, opens your browser for authorization, and exchanges the code for a token using PKCE — no client secret needed.
+            The CLI starts a local server on port 7171, opens your browser for authorization, and exchanges the code for a token using PKCE — no client secret needed.
         </p>
+
+        <h3 style="margin-top: 24px;">Per-Host Configuration</h3>
+        <p style="margin-bottom: 8px; color: var(--text-muted); font-size: 0.9rem;">
+            Store OAuth settings per host so you don't need to pass them every time:
+        </p>
+<pre><code><span class="comment"># Store OAuth client ID for a self-hosted instance</span>
+<span class="cmd">glab config set client_id &lt;app-id&gt; --host gitlab.example.com</span>
+
+<span class="comment"># Store custom redirect URI (default: http://localhost:7171/auth/redirect)</span>
+<span class="cmd">glab config set redirect_uri http://localhost:8080/callback --host gitlab.example.com</span>
+
+<span class="comment"># Store custom OAuth scopes</span>
+<span class="cmd">glab config set oauth_scopes "api read_user write_repository" --host gitlab.example.com</span></code></pre>
     </div>
 </section>
 
 <section id="commands">
     <div class="container">
         <h2>Command Reference</h2>
+
+        <div class="cmd-group">
+            <h3>Global Flags</h3>
+            <table class="cmd-table">
+                <tr><td>--repo, -R</td><td>Select a GitLab repository using HOST/OWNER/REPO format (e.g., <code>-R gitlab.example.com/group/project</code>)</td></tr>
+            </table>
+            <p style="margin-top: 8px; color: var(--text-muted); font-size: 0.9rem;">
+                When no <code>--repo</code> is specified, glab resolves the host from the git remote. If the remote isn't a GitLab host, it falls back to the default host, then to the first authenticated host.
+            </p>
+        </div>
 
         <div class="cmd-group">
             <h3>Core Commands</h3>
@@ -470,10 +493,10 @@
         <div class="cmd-group">
             <h3>Utilities</h3>
             <table class="cmd-table">
-                <tr><td>glab api &lt;endpoint&gt;</td><td>Make authenticated API requests</td></tr>
+                <tr><td>glab api &lt;endpoint&gt;</td><td>Make authenticated API requests (supports <code>--hostname</code> to target a specific host)</td></tr>
                 <tr><td>glab browse [path]</td><td>Open project page in browser</td></tr>
-                <tr><td>glab config get &lt;key&gt;</td><td>Get a configuration value</td></tr>
-                <tr><td>glab config set &lt;key&gt; &lt;val&gt;</td><td>Set a configuration value</td></tr>
+                <tr><td>glab config get &lt;key&gt;</td><td>Get a configuration value (use <code>--host</code> for per-host keys)</td></tr>
+                <tr><td>glab config set &lt;key&gt; &lt;val&gt;</td><td>Set a configuration value (use <code>--host</code> for per-host keys)</td></tr>
                 <tr><td>glab config list</td><td>List all configuration values</td></tr>
                 <tr><td>glab completion &lt;shell&gt;</td><td>Generate shell completions</td></tr>
             </table>
@@ -529,6 +552,14 @@
 <span class="cmd">glab issue comment 42 --body "Fixed in !99"</span>
 <span class="cmd">glab issue close 42</span></code></pre>
 
+        <h3>Working with Remote Projects</h3>
+<pre><code><span class="comment"># Target a project on any GitLab instance (no git clone needed)</span>
+<span class="cmd">glab issue list -R gitlab.example.com/group/project</span>
+<span class="cmd">glab mr list --state opened -R gitlab.example.com/team/app</span>
+
+<span class="comment"># Direct API access with specific host</span>
+<span class="cmd">glab api '/projects?membership=true' --hostname gitlab.example.com</span></code></pre>
+
         <h3>JSON Output &amp; Scripting</h3>
 <pre><code><span class="comment"># Get MR data as JSON</span>
 <span class="cmd">glab mr list --json | jq '.[].title'</span>
@@ -544,12 +575,23 @@
     <div class="container">
         <h2>Configuration</h2>
         <p style="margin-bottom: 16px;">Configuration is stored in <code>~/.config/glab/</code>. Override with the <code>GLAB_CONFIG_DIR</code> environment variable.</p>
+
+        <h3>Global Keys</h3>
         <table class="cmd-table">
             <tr><td>editor</td><td>Preferred text editor</td></tr>
             <tr><td>pager</td><td>Preferred pager program</td></tr>
             <tr><td>browser</td><td>Preferred web browser</td></tr>
             <tr><td>protocol</td><td>Git protocol: https (default) or ssh</td></tr>
             <tr><td>git_remote</td><td>Default git remote name (default: origin)</td></tr>
+        </table>
+
+        <h3>Per-Host Keys (use with <code>--host</code>)</h3>
+        <table class="cmd-table">
+            <tr><td>client_id</td><td>OAuth application ID</td></tr>
+            <tr><td>redirect_uri</td><td>OAuth redirect URI (default: <code>http://localhost:7171/auth/redirect</code>)</td></tr>
+            <tr><td>oauth_scopes</td><td>OAuth scopes (default: <code>openid profile api read_user write_repository</code>)</td></tr>
+            <tr><td>protocol</td><td>Git protocol for this host</td></tr>
+            <tr><td>api_host</td><td>API hostname override</td></tr>
         </table>
 
         <h3>Environment Variables</h3>
