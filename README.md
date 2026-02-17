@@ -4,19 +4,31 @@ Work seamlessly with GitLab from the command line.
 
 `glab` is a CLI tool for GitLab, written in Go. It follows the same interface patterns as the GitHub CLI (`gh`), providing a familiar experience for managing merge requests, issues, pipelines, repositories, and more.
 
+**Documentation:** [philipkram.github.io/Gitlab-CLI](https://philipkram.github.io/Gitlab-CLI/)
+
 ## Installation
 
-### From source
+### Homebrew (macOS & Linux)
+
+```bash
+brew install PhilipKram/tap/glab
+```
+
+### Binary releases
+
+Download pre-built binaries for Linux, macOS, and Windows (amd64/arm64) from the [releases page](https://github.com/PhilipKram/Gitlab-CLI/releases).
+
+### Go install
 
 ```bash
 go install github.com/PhilipKram/gitlab-cli@latest
 ```
 
-### Build locally
+### Build from source
 
 ```bash
-git clone https://github.com/PhilipKram/gitlab-cli.git
-cd gitlab-cli
+git clone https://github.com/PhilipKram/Gitlab-CLI.git
+cd Gitlab-CLI
 make build
 # Binary available at ./bin/glab
 ```
@@ -154,6 +166,37 @@ Configuration is stored in `~/.config/glab/`. Override with `GLAB_CONFIG_DIR`.
 | `GLAB_TOKEN` | Authentication token (alternative) |
 | `GITLAB_HOST` | Default GitLab hostname |
 | `GLAB_CONFIG_DIR` | Configuration directory |
+
+## Releasing
+
+Releases are automated via [GoReleaser](https://goreleaser.com/) and GitHub Actions.
+
+To create a release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+This will:
+1. Run tests
+2. Build cross-platform binaries (linux/darwin/windows, amd64/arm64)
+3. Create a GitHub Release with archives and checksums
+4. Update the Homebrew formula in `PhilipKram/homebrew-tap`
+5. Publish deb/rpm packages
+
+### Shell Completions
+
+```bash
+# Bash
+source <(glab completion bash)
+
+# Zsh
+glab completion zsh > "${fpath[1]}/_glab"
+
+# Fish
+glab completion fish | source
+```
 
 ## License
 

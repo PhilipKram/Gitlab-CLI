@@ -3,7 +3,7 @@ VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-ldflags "-X main.version=$(VERSION)"
 GO=go
 
-.PHONY: all build clean test lint install
+.PHONY: all build clean test lint install fmt vet snapshot release
 
 all: build
 
@@ -14,7 +14,7 @@ install:
 	$(GO) install $(LDFLAGS) .
 
 clean:
-	rm -rf bin/
+	rm -rf bin/ dist/
 	$(GO) clean
 
 test:
@@ -28,3 +28,11 @@ fmt:
 
 vet:
 	$(GO) vet ./...
+
+# Build cross-platform snapshot (no publish)
+snapshot:
+	goreleaser release --snapshot --clean
+
+# Full release (requires GITHUB_TOKEN)
+release:
+	goreleaser release --clean

@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>glab - GitLab CLI</title>
+    <meta name="description" content="Work seamlessly with GitLab from the command line. A CLI tool for GitLab written in Go.">
+    <style>
+        :root {
+            --primary: #fc6d26;
+            --primary-dark: #e24329;
+            --bg: #0d1117;
+            --bg-secondary: #161b22;
+            --text: #c9d1d9;
+            --text-bright: #f0f6fc;
+            --text-muted: #8b949e;
+            --border: #30363d;
+            --code-bg: #1c2129;
+            --link: #58a6ff;
+            --success: #3fb950;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        a { color: var(--link); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+        /* Hero */
+        .hero {
+            padding: 80px 0 60px;
+            text-align: center;
+            border-bottom: 1px solid var(--border);
+        }
+        .hero h1 {
+            font-size: 3rem;
+            color: var(--text-bright);
+            margin-bottom: 16px;
+        }
+        .hero h1 span { color: var(--primary); }
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin: 0 auto 32px;
+        }
+        .hero-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            text-decoration: none;
+        }
+        .btn-secondary {
+            background: var(--bg-secondary);
+            color: var(--text-bright);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover {
+            border-color: var(--text-muted);
+            text-decoration: none;
+        }
+
+        /* Install bar */
+        .install-bar {
+            margin-top: 32px;
+        }
+        .install-bar code {
+            display: inline-block;
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px 20px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 0.95rem;
+            color: var(--success);
+            user-select: all;
+        }
+
+        /* Sections */
+        section {
+            padding: 60px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        section:last-child { border-bottom: none; }
+        section h2 {
+            font-size: 2rem;
+            color: var(--text-bright);
+            margin-bottom: 24px;
+        }
+        section h3 {
+            font-size: 1.25rem;
+            color: var(--text-bright);
+            margin: 24px 0 12px;
+        }
+
+        /* Feature grid */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin-top: 32px;
+        }
+        .feature {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+        }
+        .feature h3 {
+            margin-top: 0;
+            font-size: 1.1rem;
+        }
+        .feature p { color: var(--text-muted); font-size: 0.9rem; }
+        .feature code {
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 0.85rem;
+            color: var(--primary);
+        }
+
+        /* Command reference */
+        .cmd-group { margin-bottom: 32px; }
+        .cmd-group h3 {
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+        .cmd-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+        }
+        .cmd-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+        .cmd-table td:first-child {
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 0.9rem;
+            color: var(--link);
+            white-space: nowrap;
+            width: 280px;
+        }
+        .cmd-table td:last-child { color: var(--text-muted); }
+
+        /* Code blocks */
+        pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 16px 20px;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+        pre code {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 0.9rem;
+            color: var(--text);
+        }
+        .comment { color: var(--text-muted); }
+        .cmd { color: var(--success); }
+
+        /* Install methods */
+        .install-methods {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+        }
+        .install-method {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+        }
+        .install-method h3 { margin-top: 0; }
+
+        /* Footer */
+        footer {
+            padding: 40px 0;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        footer a { color: var(--text-muted); }
+        footer a:hover { color: var(--text); }
+
+        /* Nav */
+        nav {
+            position: sticky;
+            top: 0;
+            background: rgba(13, 17, 23, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+            z-index: 100;
+            padding: 12px 0;
+        }
+        nav .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        nav .logo {
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: var(--text-bright);
+        }
+        nav .logo span { color: var(--primary); }
+        nav .nav-links { display: flex; gap: 24px; }
+        nav .nav-links a { color: var(--text-muted); font-size: 0.9rem; }
+        nav .nav-links a:hover { color: var(--text-bright); text-decoration: none; }
+
+        @media (max-width: 600px) {
+            .hero h1 { font-size: 2rem; }
+            .hero p { font-size: 1rem; }
+            .cmd-table td:first-child { width: auto; }
+            nav .nav-links { gap: 12px; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <div class="container">
+        <div class="logo"><span>glab</span> CLI</div>
+        <div class="nav-links">
+            <a href="#install">Install</a>
+            <a href="#commands">Commands</a>
+            <a href="#examples">Examples</a>
+            <a href="https://github.com/PhilipKram/Gitlab-CLI">GitHub</a>
+        </div>
+    </div>
+</nav>
+
+<header class="hero">
+    <div class="container">
+        <h1><span>glab</span> CLI</h1>
+        <p>Work seamlessly with GitLab from the command line. Manage merge requests, issues, pipelines, and more.</p>
+        <div class="hero-buttons">
+            <a href="#install" class="btn btn-primary">Get Started</a>
+            <a href="https://github.com/PhilipKram/Gitlab-CLI" class="btn btn-secondary">View on GitHub</a>
+        </div>
+        <div class="install-bar">
+            <code>brew install PhilipKram/tap/glab</code>
+        </div>
+    </div>
+</header>
+
+<section>
+    <div class="container">
+        <h2>Why glab?</h2>
+        <div class="features">
+            <div class="feature">
+                <h3>Merge Requests</h3>
+                <p>Create, review, approve, and merge MRs without leaving your terminal. Supports draft MRs, assignees, reviewers, and labels.</p>
+                <code>glab mr create --title "Feature" --draft</code>
+            </div>
+            <div class="feature">
+                <h3>Issues</h3>
+                <p>Full issue lifecycle management. Create, assign, label, comment, and close issues from the command line.</p>
+                <code>glab issue list --state opened</code>
+            </div>
+            <div class="feature">
+                <h3>CI/CD Pipelines</h3>
+                <p>Trigger pipelines, view job logs, retry failed builds, and monitor CI status right from your terminal.</p>
+                <code>glab pipeline run --ref main</code>
+            </div>
+            <div class="feature">
+                <h3>Repositories</h3>
+                <p>Clone, create, fork, and manage repositories. Full support for groups and namespaces.</p>
+                <code>glab repo clone owner/repo</code>
+            </div>
+            <div class="feature">
+                <h3>Familiar Interface</h3>
+                <p>Follows the same command patterns as GitHub CLI (gh). If you know gh, you already know glab.</p>
+                <code>glab &lt;noun&gt; &lt;verb&gt; [flags]</code>
+            </div>
+            <div class="feature">
+                <h3>Self-Hosted Support</h3>
+                <p>Works with gitlab.com and any self-hosted GitLab instance. Configure multiple hosts.</p>
+                <code>glab auth login --hostname gitlab.internal</code>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="install">
+    <div class="container">
+        <h2>Installation</h2>
+        <div class="install-methods">
+            <div class="install-method">
+                <h3>Homebrew (macOS &amp; Linux)</h3>
+<pre><code><span class="comment"># Add the tap and install</span>
+<span class="cmd">brew install PhilipKram/tap/glab</span></code></pre>
+            </div>
+            <div class="install-method">
+                <h3>Go Install</h3>
+<pre><code><span class="comment"># Requires Go 1.22+</span>
+<span class="cmd">go install github.com/PhilipKram/gitlab-cli@latest</span></code></pre>
+            </div>
+            <div class="install-method">
+                <h3>Binary Download</h3>
+                <p>Download pre-built binaries for Linux, macOS, and Windows from the <a href="https://github.com/PhilipKram/Gitlab-CLI/releases">releases page</a>.</p>
+                <p style="margin-top: 8px; font-size: 0.85rem; color: var(--text-muted);">Available for amd64 and arm64.</p>
+            </div>
+            <div class="install-method">
+                <h3>Build from Source</h3>
+<pre><code><span class="cmd">git clone https://github.com/PhilipKram/Gitlab-CLI.git</span>
+<span class="cmd">cd Gitlab-CLI</span>
+<span class="cmd">make build</span>
+<span class="comment"># Binary at ./bin/glab</span></code></pre>
+            </div>
+        </div>
+
+        <h3>Authentication</h3>
+        <p style="margin-bottom: 12px;">After installing, authenticate with your GitLab instance:</p>
+<pre><code><span class="comment"># Login with a personal access token</span>
+<span class="cmd">glab auth login --token glpat-xxxxxxxxxxxxxxxxxxxx</span>
+
+<span class="comment"># Or for self-hosted instances</span>
+<span class="cmd">glab auth login --hostname gitlab.example.com --token glpat-xxxx</span>
+
+<span class="comment"># Or set an environment variable</span>
+<span class="cmd">export GITLAB_TOKEN="glpat-xxxxxxxxxxxxxxxxxxxx"</span></code></pre>
+        <p style="margin-top: 8px; color: var(--text-muted); font-size: 0.9rem;">Required token scopes: <code>api</code>, <code>read_user</code>, <code>read_repository</code></p>
+    </div>
+</section>
+
+<section id="commands">
+    <div class="container">
+        <h2>Command Reference</h2>
+
+        <div class="cmd-group">
+            <h3>Core Commands</h3>
+            <table class="cmd-table">
+                <tr><td>glab auth login</td><td>Authenticate with a GitLab instance</td></tr>
+                <tr><td>glab auth logout</td><td>Log out of a GitLab instance</td></tr>
+                <tr><td>glab auth status</td><td>View authentication status</td></tr>
+                <tr><td>glab auth token</td><td>Print the stored auth token</td></tr>
+            </table>
+        </div>
+
+        <div class="cmd-group">
+            <h3>Merge Requests</h3>
+            <table class="cmd-table">
+                <tr><td>glab mr create</td><td>Create a new merge request</td></tr>
+                <tr><td>glab mr list</td><td>List merge requests</td></tr>
+                <tr><td>glab mr view &lt;id&gt;</td><td>View merge request details</td></tr>
+                <tr><td>glab mr merge &lt;id&gt;</td><td>Merge a merge request</td></tr>
+                <tr><td>glab mr close &lt;id&gt;</td><td>Close a merge request</td></tr>
+                <tr><td>glab mr reopen &lt;id&gt;</td><td>Reopen a closed merge request</td></tr>
+                <tr><td>glab mr approve &lt;id&gt;</td><td>Approve a merge request</td></tr>
+                <tr><td>glab mr checkout &lt;id&gt;</td><td>Check out the MR branch locally</td></tr>
+                <tr><td>glab mr diff &lt;id&gt;</td><td>View the diff of a merge request</td></tr>
+                <tr><td>glab mr comment &lt;id&gt;</td><td>Add a comment to a merge request</td></tr>
+                <tr><td>glab mr edit &lt;id&gt;</td><td>Edit merge request properties</td></tr>
+            </table>
+        </div>
+
+        <div class="cmd-group">
+            <h3>Issues</h3>
+            <table class="cmd-table">
+                <tr><td>glab issue create</td><td>Create a new issue</td></tr>
+                <tr><td>glab issue list</td><td>List issues</td></tr>
+                <tr><td>glab issue view &lt;id&gt;</td><td>View issue details</td></tr>
+                <tr><td>glab issue close &lt;id&gt;</td><td>Close an issue</td></tr>
+                <tr><td>glab issue reopen &lt;id&gt;</td><td>Reopen an issue</td></tr>
+                <tr><td>glab issue comment &lt;id&gt;</td><td>Add a comment to an issue</td></tr>
+                <tr><td>glab issue edit &lt;id&gt;</td><td>Edit issue properties</td></tr>
+                <tr><td>glab issue delete &lt;id&gt;</td><td>Delete an issue</td></tr>
+            </table>
+        </div>
+
+        <div class="cmd-group">
+            <h3>Repositories</h3>
+            <table class="cmd-table">
+                <tr><td>glab repo clone &lt;path&gt;</td><td>Clone a repository</td></tr>
+                <tr><td>glab repo create &lt;name&gt;</td><td>Create a new repository</td></tr>
+                <tr><td>glab repo fork [path]</td><td>Fork a repository</td></tr>
+                <tr><td>glab repo view [path]</td><td>View repository information</td></tr>
+                <tr><td>glab repo list</td><td>List repositories</td></tr>
+                <tr><td>glab repo archive [path]</td><td>Archive a repository</td></tr>
+                <tr><td>glab repo delete &lt;path&gt;</td><td>Delete a repository</td></tr>
+            </table>
+        </div>
+
+        <div class="cmd-group">
+            <h3>CI/CD Pipelines</h3>
+            <table class="cmd-table">
+                <tr><td>glab pipeline list</td><td>List pipelines</td></tr>
+                <tr><td>glab pipeline view &lt;id&gt;</td><td>View pipeline details and jobs</td></tr>
+                <tr><td>glab pipeline run</td><td>Trigger a new pipeline</td></tr>
+                <tr><td>glab pipeline cancel &lt;id&gt;</td><td>Cancel a running pipeline</td></tr>
+                <tr><td>glab pipeline retry &lt;id&gt;</td><td>Retry a failed pipeline</td></tr>
+                <tr><td>glab pipeline delete &lt;id&gt;</td><td>Delete a pipeline</td></tr>
+                <tr><td>glab pipeline jobs &lt;id&gt;</td><td>List jobs in a pipeline</td></tr>
+                <tr><td>glab pipeline job-log &lt;id&gt;</td><td>View job log output</td></tr>
+            </table>
+        </div>
+
+        <div class="cmd-group">
+            <h3>Releases</h3>
+            <table class="cmd-table">
+                <tr><td>glab release create &lt;tag&gt;</td><td>Create a release</td></tr>
+                <tr><td>glab release list</td><td>List releases</td></tr>
+                <tr><td>glab release view &lt;tag&gt;</td><td>View release details</td></tr>
+                <tr><td>glab release delete &lt;tag&gt;</td><td>Delete a release</td></tr>
+                <tr><td>glab release download &lt;tag&gt;</td><td>List downloadable release assets</td></tr>
+                <tr><td>glab release upload &lt;tag&gt;</td><td>Upload an asset to a release</td></tr>
+            </table>
+        </div>
+
+        <div class="cmd-group">
+            <h3>Snippets, Labels &amp; Projects</h3>
+            <table class="cmd-table">
+                <tr><td>glab snippet create</td><td>Create a snippet</td></tr>
+                <tr><td>glab snippet list</td><td>List snippets</td></tr>
+                <tr><td>glab snippet view &lt;id&gt;</td><td>View a snippet</td></tr>
+                <tr><td>glab label create</td><td>Create a label</td></tr>
+                <tr><td>glab label list</td><td>List labels</td></tr>
+                <tr><td>glab project list</td><td>List projects</td></tr>
+                <tr><td>glab project view</td><td>View project details</td></tr>
+                <tr><td>glab project members</td><td>List project members</td></tr>
+            </table>
+        </div>
+
+        <div class="cmd-group">
+            <h3>Utilities</h3>
+            <table class="cmd-table">
+                <tr><td>glab api &lt;endpoint&gt;</td><td>Make authenticated API requests</td></tr>
+                <tr><td>glab browse [path]</td><td>Open project page in browser</td></tr>
+                <tr><td>glab config get &lt;key&gt;</td><td>Get a configuration value</td></tr>
+                <tr><td>glab config set &lt;key&gt; &lt;val&gt;</td><td>Set a configuration value</td></tr>
+                <tr><td>glab config list</td><td>List all configuration values</td></tr>
+                <tr><td>glab completion &lt;shell&gt;</td><td>Generate shell completions</td></tr>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section id="examples">
+    <div class="container">
+        <h2>Examples</h2>
+
+        <h3>Complete MR Workflow</h3>
+<pre><code><span class="comment"># Create a merge request from current branch</span>
+<span class="cmd">glab mr create --title "Add user authentication" \
+  --description "Implements OAuth2 login flow" \
+  --assignee @alice --reviewer @bob \
+  --label feature,auth --draft</span>
+
+<span class="comment"># List open MRs assigned to you</span>
+<span class="cmd">glab mr list --state opened</span>
+
+<span class="comment"># Check out a teammate's MR for review</span>
+<span class="cmd">glab mr checkout 42</span>
+
+<span class="comment"># Approve and merge</span>
+<span class="cmd">glab mr approve 42</span>
+<span class="cmd">glab mr merge 42 --squash --remove-source-branch</span></code></pre>
+
+        <h3>CI/CD Pipeline Monitoring</h3>
+<pre><code><span class="comment"># Trigger a pipeline on main</span>
+<span class="cmd">glab pipeline run --ref main --variables DEPLOY_ENV=staging</span>
+
+<span class="comment"># Watch pipeline status</span>
+<span class="cmd">glab pipeline list --ref main --limit 5</span>
+
+<span class="comment"># Debug a failed job</span>
+<span class="cmd">glab pipeline jobs 12345</span>
+<span class="cmd">glab pipeline job-log 67890</span></code></pre>
+
+        <h3>Issue Tracking</h3>
+<pre><code><span class="comment"># Create a bug report</span>
+<span class="cmd">glab issue create --title "Login page broken on Safari" \
+  --label bug,P1 --assignee @alice</span>
+
+<span class="comment"># Find issues by label</span>
+<span class="cmd">glab issue list --label bug --state opened</span>
+
+<span class="comment"># Close with a comment</span>
+<span class="cmd">glab issue comment 42 --body "Fixed in !99"</span>
+<span class="cmd">glab issue close 42</span></code></pre>
+
+        <h3>JSON Output &amp; Scripting</h3>
+<pre><code><span class="comment"># Get MR data as JSON</span>
+<span class="cmd">glab mr list --json | jq '.[].title'</span>
+
+<span class="comment"># Direct API access for anything not covered</span>
+<span class="cmd">glab api projects --method GET</span>
+<span class="cmd">glab api graphql --method POST \
+  --body '{"query":"{ currentUser { name } }"}'</span></code></pre>
+    </div>
+</section>
+
+<section>
+    <div class="container">
+        <h2>Configuration</h2>
+        <p style="margin-bottom: 16px;">Configuration is stored in <code>~/.config/glab/</code>. Override with the <code>GLAB_CONFIG_DIR</code> environment variable.</p>
+        <table class="cmd-table">
+            <tr><td>editor</td><td>Preferred text editor</td></tr>
+            <tr><td>pager</td><td>Preferred pager program</td></tr>
+            <tr><td>browser</td><td>Preferred web browser</td></tr>
+            <tr><td>protocol</td><td>Git protocol: https (default) or ssh</td></tr>
+            <tr><td>git_remote</td><td>Default git remote name (default: origin)</td></tr>
+        </table>
+
+        <h3>Environment Variables</h3>
+        <table class="cmd-table">
+            <tr><td>GITLAB_TOKEN</td><td>Authentication token (overrides stored config)</td></tr>
+            <tr><td>GLAB_TOKEN</td><td>Authentication token (alternative)</td></tr>
+            <tr><td>GITLAB_HOST</td><td>Default GitLab hostname (default: gitlab.com)</td></tr>
+            <tr><td>GLAB_CONFIG_DIR</td><td>Configuration directory path</td></tr>
+        </table>
+    </div>
+</section>
+
+<footer>
+    <div class="container">
+        <p>
+            <a href="https://github.com/PhilipKram/Gitlab-CLI">GitHub</a> &middot;
+            <a href="https://github.com/PhilipKram/Gitlab-CLI/releases">Releases</a> &middot;
+            <a href="https://github.com/PhilipKram/Gitlab-CLI/issues">Issues</a>
+        </p>
+        <p style="margin-top: 8px;">MIT License</p>
+    </div>
+</footer>
+
+</body>
+</html>
