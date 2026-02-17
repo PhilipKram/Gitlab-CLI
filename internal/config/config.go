@@ -25,10 +25,11 @@ type Config struct {
 
 // HostConfig stores per-host authentication and settings.
 type HostConfig struct {
-	Token    string `json:"token"`
-	User     string `json:"user,omitempty"`
-	Protocol string `json:"protocol,omitempty"`
-	APIHost  string `json:"api_host,omitempty"`
+	Token      string `json:"token"`
+	User       string `json:"user,omitempty"`
+	Protocol   string `json:"protocol,omitempty"`
+	APIHost    string `json:"api_host,omitempty"`
+	AuthMethod string `json:"auth_method,omitempty"` // "pat" or "oauth"
 }
 
 // HostsConfig maps hostnames to their configurations.
@@ -169,6 +170,18 @@ func DefaultHost() string {
 		return h
 	}
 	return "gitlab.com"
+}
+
+// AuthMethodForHost returns the authentication method for a given host ("pat", "oauth", or "").
+func AuthMethodForHost(host string) string {
+	hosts, err := LoadHosts()
+	if err != nil {
+		return ""
+	}
+	if hc, ok := hosts[host]; ok {
+		return hc.AuthMethod
+	}
+	return ""
 }
 
 // TokenForHost returns the authentication token for a given host.

@@ -35,12 +35,61 @@ make build
 
 ## Authentication
 
+### Interactive login (recommended)
+
+Just run `glab auth login` and follow the prompts — the same experience as `gh auth login`:
+
+```
+$ glab auth login
+? What GitLab instance do you want to log into?
+  [1] gitlab.com
+  [2] GitLab Self-managed
+  Choice: 1
+? What is your preferred protocol for Git operations on this host?
+  [1] HTTPS
+  [2] SSH
+  Choice: 1
+? How would you like to authenticate glab?
+  [1] Login with a web browser
+  [2] Paste a token
+  Choice: 1
+? OAuth Application ID: <your-app-id>
+
+! Opening gitlab.com in your browser...
+- Waiting for authentication...
+- glab config set -h gitlab.com git_protocol https
+✓ Logged in to gitlab.com as username
+```
+
+### OAuth (browser-based login)
+
+Authenticate via OAuth in the browser. You first need to create an OAuth application
+in your GitLab instance under **Settings > Applications** with:
+- Redirect URI: `http://127.0.0.1` (any port)
+- Scopes: `api`, `read_user`, `read_repository`
+
+```bash
+# Interactive OAuth login
+glab auth login --web --client-id <your-app-id>
+
+# OAuth with a self-hosted instance
+glab auth login --web --client-id <your-app-id> --hostname gitlab.example.com
+```
+
+The CLI starts a local server, opens your browser for authorization, and
+automatically exchanges the code for a token using PKCE.
+
+### Token-based login
+
 ```bash
 # Login with a personal access token
 glab auth login --token glpat-xxxxxxxxxxxxxxxxxxxx
 
 # Login to a self-hosted GitLab instance
 glab auth login --hostname gitlab.example.com --token glpat-xxxx
+
+# Pipe a token from a file or secret manager
+glab auth login --stdin < token.txt
 
 # Check authentication status
 glab auth status
@@ -50,6 +99,17 @@ export GITLAB_TOKEN="glpat-xxxxxxxxxxxxxxxxxxxx"
 ```
 
 Required token scopes: `api`, `read_user`, `read_repository`
+
+### Auth login flags
+
+| Flag | Description |
+|------|-------------|
+| `--hostname, -h` | GitLab hostname (default: gitlab.com) |
+| `--token, -t` | Personal access token |
+| `--web, -w` | Authenticate via OAuth in the browser |
+| `--client-id` | OAuth application ID (required with `--web`) |
+| `--git-protocol, -p` | Preferred git protocol: `https` or `ssh` |
+| `--stdin` | Read token from standard input |
 
 ## Commands
 
