@@ -1,0 +1,92 @@
+version: 2
+
+project_name: glab
+
+before:
+  hooks:
+    - go mod tidy
+    - go vet ./...
+
+builds:
+  - id: glab
+    main: .
+    binary: glab
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: glab-archive
+    builds:
+      - glab
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+
+brews:
+  - name: glab
+    ids:
+      - glab-archive
+    repository:
+      owner: PhilipKram
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://philipkram.github.io/Gitlab-CLI/"
+    description: "A CLI tool for GitLab, similar to GitHub CLI (gh)"
+    license: "MIT"
+    install: |
+      bin.install "glab"
+    test: |
+      assert_match "glab version", shell_output("#{bin}/glab --version")
+    dependencies:
+      - name: git
+
+nfpms:
+  - id: glab-nfpm
+    package_name: glab
+    vendor: PhilipKram
+    homepage: "https://philipkram.github.io/Gitlab-CLI/"
+    maintainer: "PhilipKram"
+    description: "A CLI tool for GitLab, similar to GitHub CLI (gh)"
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+
+release:
+  github:
+    owner: PhilipKram
+    name: Gitlab-CLI
+  draft: false
+  prerelease: auto
+  name_template: "v{{ .Version }}"
