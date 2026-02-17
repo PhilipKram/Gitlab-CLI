@@ -16,9 +16,10 @@ import (
 // NewAPICmd creates the api command.
 func NewAPICmd(f *cmdutil.Factory) *cobra.Command {
 	var (
-		method  string
-		body    string
-		headers []string
+		method   string
+		body     string
+		headers  []string
+		hostname string
 	)
 
 	cmd := &cobra.Command{
@@ -36,12 +37,24 @@ Or it can be a full URL starting with "http".`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			endpoint := args[0]
-			host := config.DefaultHost()
+
+			// Resolve host: --hostname flag > factory client > default
+			host := hostname
+			if host == "" {
+				client, err := f.Client()
+				if err == nil {
+					host = client.Host()
+				} else {
+					host = config.DefaultHost()
+				}
+			}
 
 			token, _ := config.TokenForHost(host)
 			if token == "" {
-				return fmt.Errorf("not authenticated; run 'glab auth login'")
+				return fmt.Errorf("not authenticated with %s; run 'glab auth login --hostname %s'", host, host)
 			}
+
+			authMethod := config.AuthMethodForHost(host)
 
 			// Build the full URL
 			var url string
@@ -64,7 +77,11 @@ Or it can be a full URL starting with "http".`,
 				return fmt.Errorf("creating request: %w", err)
 			}
 
-			req.Header.Set("PRIVATE-TOKEN", token)
+			if authMethod == "oauth" {
+				req.Header.Set("Authorization", "Bearer "+token)
+			} else {
+				req.Header.Set("PRIVATE-TOKEN", token)
+			}
 			req.Header.Set("Content-Type", "application/json")
 
 			for _, h := range headers {
@@ -105,6 +122,7 @@ Or it can be a full URL starting with "http".`,
 	cmd.Flags().StringVarP(&method, "method", "X", "GET", "HTTP method")
 	cmd.Flags().StringVar(&body, "body", "", "Request body (JSON)")
 	cmd.Flags().StringSliceVarP(&headers, "header", "H", nil, "Additional headers (key:value)")
+	cmd.Flags().StringVar(&hostname, "hostname", "", "GitLab hostname to use")
 
 	return cmd
 }
