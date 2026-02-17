@@ -96,7 +96,8 @@ Required token scopes: api, read_user, read_repository.`,
 					return fmt.Errorf("--client-id is required for OAuth login (or set it with: glab config set client_id <app-id> --host %s)", hostname)
 				}
 
-				status, err := auth.OAuthFlow(hostname, clientID, errOut, browser.Open)
+				redirectURI := config.RedirectURIForHost(hostname)
+				status, err := auth.OAuthFlow(hostname, clientID, redirectURI, errOut, browser.Open)
 				if err != nil {
 					return err
 				}
@@ -216,7 +217,8 @@ func loginInteractive(f *cmdutil.Factory, presetHost, presetProto, presetClientI
 		}
 
 		fmt.Fprintln(errOut)
-		status, err = auth.OAuthFlow(hostname, clientID, errOut, browser.Open)
+		redirectURI := config.RedirectURIForHost(hostname)
+		status, err = auth.OAuthFlow(hostname, clientID, redirectURI, errOut, browser.Open)
 		if err != nil {
 			return err
 		}

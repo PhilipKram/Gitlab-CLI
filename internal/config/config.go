@@ -26,17 +26,18 @@ type Config struct {
 
 // HostConfig stores per-host authentication and settings.
 type HostConfig struct {
-	Token      string `json:"token"`
-	User       string `json:"user,omitempty"`
-	Protocol   string `json:"protocol,omitempty"`
-	APIHost    string `json:"api_host,omitempty"`
-	AuthMethod string `json:"auth_method,omitempty"` // "pat" or "oauth"
-	ClientID   string `json:"client_id,omitempty"`
+	Token       string `json:"token"`
+	User        string `json:"user,omitempty"`
+	Protocol    string `json:"protocol,omitempty"`
+	APIHost     string `json:"api_host,omitempty"`
+	AuthMethod  string `json:"auth_method,omitempty"` // "pat" or "oauth"
+	ClientID    string `json:"client_id,omitempty"`
+	RedirectURI string `json:"redirect_uri,omitempty"`
 }
 
 // HostKeys returns valid per-host config keys.
 func HostKeys() []string {
-	return []string{"client_id", "protocol", "api_host"}
+	return []string{"client_id", "redirect_uri", "protocol", "api_host"}
 }
 
 // GetHostValue returns a per-host config value by key.
@@ -52,6 +53,8 @@ func GetHostValue(host, key string) (string, error) {
 	switch key {
 	case "client_id":
 		return hc.ClientID, nil
+	case "redirect_uri":
+		return hc.RedirectURI, nil
 	case "protocol":
 		return hc.Protocol, nil
 	case "api_host":
@@ -81,6 +84,8 @@ func SetHostValue(host, key, value string) error {
 	switch key {
 	case "client_id":
 		hc.ClientID = value
+	case "redirect_uri":
+		hc.RedirectURI = value
 	case "protocol":
 		hc.Protocol = value
 	case "api_host":
@@ -239,6 +244,18 @@ func AuthMethodForHost(host string) string {
 	}
 	if hc, ok := hosts[host]; ok {
 		return hc.AuthMethod
+	}
+	return ""
+}
+
+// RedirectURIForHost returns the stored OAuth redirect URI for a given host.
+func RedirectURIForHost(host string) string {
+	hosts, err := LoadHosts()
+	if err != nil {
+		return ""
+	}
+	if hc, ok := hosts[host]; ok {
+		return hc.RedirectURI
 	}
 	return ""
 }

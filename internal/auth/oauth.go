@@ -35,14 +35,37 @@ type OAuthTokenResponse struct {
 
 // OAuthFlow performs the OAuth2 Authorization Code flow with PKCE.
 // openBrowser is called with the authorization URL; pass nil to skip auto-open.
-func OAuthFlow(host, clientID string, out io.Writer, openBrowser func(string) error) (*Status, error) {
+// If redirectURI is empty, a default is used with a random port.
+func OAuthFlow(host, clientID, redirectURI string, out io.Writer, openBrowser func(string) error) (*Status, error) {
+	// Parse redirect URI to determine listen address and callback path
+	listenAddr := "127.0.0.1:0"
+	callbackPath := "/callback"
+	if redirectURI != "" {
+		u, err := url.Parse(redirectURI)
+		if err != nil {
+			return nil, fmt.Errorf("invalid redirect URI: %w", err)
+		}
+		listenHost := u.Hostname()
+		if listenHost == "localhost" {
+			listenHost = "127.0.0.1"
+		}
+		listenAddr = fmt.Sprintf("%s:%s", listenHost, u.Port())
+		callbackPath = u.Path
+		if callbackPath == "" {
+			callbackPath = "/"
+		}
+	}
+
 	// Start a local server to receive the callback
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return nil, fmt.Errorf("starting local server: %w", err)
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", port)
+
+	if redirectURI == "" {
+		port := listener.Addr().(*net.TCPAddr).Port
+		redirectURI = fmt.Sprintf("http://127.0.0.1:%d/callback", port)
+	}
 
 	// Generate PKCE parameters
 	codeVerifier, err := generateCodeVerifier()
@@ -76,7 +99,7 @@ func OAuthFlow(host, clientID string, out io.Writer, openBrowser func(string) er
 	fmt.Fprintf(out, "- Waiting for authentication...\n")
 
 	// Wait for the callback
-	code, err := waitForCallback(listener, state)
+	code, err := waitForCallback(listener, state, callbackPath)
 	if err != nil {
 		return nil, fmt.Errorf("waiting for callback: %w", err)
 	}
@@ -138,12 +161,12 @@ func buildAuthURL(host, clientID, redirectURI, state, codeChallenge string) stri
 	return baseURL + "?" + params.Encode()
 }
 
-func waitForCallback(listener net.Listener, expectedState string) (string, error) {
+func waitForCallback(listener net.Listener, expectedState, callbackPath string) (string, error) {
 	codeCh := make(chan string, 1)
 	errCh := make(chan error, 1)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(callbackPath, func(w http.ResponseWriter, r *http.Request) {
 		state := r.URL.Query().Get("state")
 		if state != expectedState {
 			errCh <- fmt.Errorf("state mismatch: possible CSRF attack")
