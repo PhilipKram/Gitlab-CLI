@@ -11,6 +11,7 @@ Work seamlessly with GitLab from the command line.
 ### Homebrew (macOS & Linux)
 
 ```bash
+brew tap PhilipKram/tap https://github.com/PhilipKram/Gitlab-CLI
 brew install PhilipKram/tap/glab
 ```
 
@@ -245,7 +246,7 @@ This will:
 1. Run tests
 2. Build cross-platform binaries (linux/darwin/windows, amd64/arm64)
 3. Create a GitHub Release with archives and checksums
-4. Update the Homebrew formula in the `PhilipKram/homebrew-tap` repository
+4. Update the Homebrew formula in the `HomebrewFormula` directory
 5. Publish deb/rpm packages
 
 ### Shell Completions

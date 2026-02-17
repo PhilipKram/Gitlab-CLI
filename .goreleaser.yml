@@ -59,8 +59,9 @@ brews:
       - glab-archive
     repository:
       owner: PhilipKram
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      name: Gitlab-CLI
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    directory: HomebrewFormula
     homepage: "https://philipkram.github.io/Gitlab-CLI/"
     description: "A CLI tool for GitLab, similar to GitHub CLI (gh)"
     license: "MIT"
