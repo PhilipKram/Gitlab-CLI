@@ -20,7 +20,8 @@ import (
 )
 
 const (
-	defaultScopes = "openid profile api read_user write_repository"
+	defaultScopes      = "openid profile api read_user write_repository"
+	defaultRedirectURI = "http://localhost:7171/auth/redirect"
 )
 
 // OAuthTokenResponse represents the response from GitLab's OAuth token endpoint.
@@ -35,40 +36,35 @@ type OAuthTokenResponse struct {
 
 // OAuthFlow performs the OAuth2 Authorization Code flow with PKCE.
 // openBrowser is called with the authorization URL; pass nil to skip auto-open.
-// If redirectURI is empty, a default is used with a random port.
+// If redirectURI is empty, http://localhost:7171/auth/redirect is used.
 // If scopes is empty, defaultScopes is used.
 func OAuthFlow(host, clientID, redirectURI, scopes string, out io.Writer, openBrowser func(string) error) (*Status, error) {
 	if scopes == "" {
 		scopes = defaultScopes
 	}
+	if redirectURI == "" {
+		redirectURI = defaultRedirectURI
+	}
+
 	// Parse redirect URI to determine listen address and callback path
-	listenAddr := "127.0.0.1:0"
-	callbackPath := "/callback"
-	if redirectURI != "" {
-		u, err := url.Parse(redirectURI)
-		if err != nil {
-			return nil, fmt.Errorf("invalid redirect URI: %w", err)
-		}
-		listenHost := u.Hostname()
-		if listenHost == "localhost" {
-			listenHost = "127.0.0.1"
-		}
-		listenAddr = fmt.Sprintf("%s:%s", listenHost, u.Port())
-		callbackPath = u.Path
-		if callbackPath == "" {
-			callbackPath = "/"
-		}
+	u, err := url.Parse(redirectURI)
+	if err != nil {
+		return nil, fmt.Errorf("invalid redirect URI: %w", err)
+	}
+	listenHost := u.Hostname()
+	if listenHost == "localhost" {
+		listenHost = "127.0.0.1"
+	}
+	listenAddr := fmt.Sprintf("%s:%s", listenHost, u.Port())
+	callbackPath := u.Path
+	if callbackPath == "" {
+		callbackPath = "/"
 	}
 
 	// Start a local server to receive the callback
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return nil, fmt.Errorf("starting local server: %w", err)
-	}
-
-	if redirectURI == "" {
-		port := listener.Addr().(*net.TCPAddr).Port
-		redirectURI = fmt.Sprintf("http://127.0.0.1:%d/callback", port)
 	}
 
 	// Generate PKCE parameters

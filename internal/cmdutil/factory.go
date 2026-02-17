@@ -2,6 +2,7 @@ package cmdutil
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/PhilipKram/gitlab-cli/internal/api"
 	"github.com/PhilipKram/gitlab-cli/internal/config"
@@ -15,6 +16,21 @@ type Factory struct {
 	Config   func() (*config.Config, error)
 	Client   func() (*api.Client, error)
 	Remote   func() (*git.Remote, error)
+
+	// repoOverride is set via --repo flag (HOST/OWNER/REPO format)
+	repoOverride string
+	overrideHost string
+	overridePath string
+}
+
+// SetRepoOverride parses a HOST/OWNER/REPO string and stores it.
+func (f *Factory) SetRepoOverride(repo string) {
+	f.repoOverride = repo
+	parts := strings.SplitN(repo, "/", 2)
+	if len(parts) == 2 {
+		f.overrideHost = parts[0]
+		f.overridePath = parts[1]
+	}
 }
 
 // NewFactory creates a Factory with default implementations.
@@ -28,12 +44,26 @@ func NewFactory() *Factory {
 	}
 
 	f.Client = func() (*api.Client, error) {
-		remote, err := f.Remote()
-		if err != nil {
-			// Fall back to default host
-			return api.NewClient(config.DefaultHost())
+		// If --repo is set, use its host
+		if f.overrideHost != "" {
+			return api.NewClient(f.overrideHost)
 		}
-		return api.NewClient(remote.Host)
+
+		remote, err := f.Remote()
+		if err == nil {
+			// Try the remote host first
+			client, err := api.NewClient(remote.Host)
+			if err == nil {
+				return client, nil
+			}
+		}
+		// Fall back to default host
+		client, err := api.NewClient(config.DefaultHost())
+		if err == nil {
+			return client, nil
+		}
+		// Fall back to the first authenticated host
+		return api.NewClientFromHosts()
 	}
 
 	f.Remote = func() (*git.Remote, error) {
@@ -51,14 +81,19 @@ func NewFactory() *Factory {
 	return f
 }
 
-// FullProjectPath returns the "owner/repo" path from the current git remote.
+// FullProjectPath returns the "owner/repo" path from the current git remote,
+// or from the --repo override if set.
 func (f *Factory) FullProjectPath() (string, error) {
+	if f.overridePath != "" {
+		return f.overridePath, nil
+	}
+
 	remote, err := f.Remote()
 	if err != nil {
-		return "", fmt.Errorf("could not determine project: %w", err)
+		return "", fmt.Errorf("could not determine project: %w\nUse --repo HOST/OWNER/REPO to specify the project", err)
 	}
 	if remote.Owner == "" || remote.Repo == "" {
-		return "", fmt.Errorf("could not determine project path from remote %s", remote.Name)
+		return "", fmt.Errorf("could not determine project path from remote %s\nUse --repo HOST/OWNER/REPO to specify the project", remote.Name)
 	}
 	return remote.Owner + "/" + remote.Repo, nil
 }

@@ -59,6 +59,21 @@ func NewOAuthClient(host, token string) (*Client, error) {
 	}, nil
 }
 
+// NewClientFromHosts creates a client using the first authenticated host found in hosts.json.
+func NewClientFromHosts() (*Client, error) {
+	hosts, err := config.LoadHosts()
+	if err != nil || len(hosts) == 0 {
+		return nil, fmt.Errorf("not authenticated with any host; run 'glab auth login'")
+	}
+	for host := range hosts {
+		client, err := NewClient(host)
+		if err == nil {
+			return client, nil
+		}
+	}
+	return nil, fmt.Errorf("not authenticated with any host; run 'glab auth login'")
+}
+
 // Host returns the hostname of the GitLab instance.
 func (c *Client) Host() string {
 	return c.host

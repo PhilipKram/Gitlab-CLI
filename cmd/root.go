@@ -9,6 +9,8 @@ import (
 func NewRootCmd(version string) *cobra.Command {
 	f := cmdutil.NewFactory()
 
+	var repoOverride string
+
 	cmd := &cobra.Command{
 		Use:   "glab <command> <subcommand> [flags]",
 		Short: "GitLab CLI",
@@ -21,8 +23,14 @@ func NewRootCmd(version string) *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       version,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			if repoOverride != "" {
+				f.SetRepoOverride(repoOverride)
+			}
+		},
 	}
 
+	cmd.PersistentFlags().StringVarP(&repoOverride, "repo", "R", "", "Select a GitLab repository using the HOST/OWNER/REPO format")
 	cmd.SetVersionTemplate("glab version {{.Version}}\n")
 
 	// Core commands
