@@ -1,0 +1,507 @@
+package cmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/PhilipKram/gitlab-cli/internal/browser"
+	"github.com/PhilipKram/gitlab-cli/internal/cmdutil"
+	"github.com/PhilipKram/gitlab-cli/internal/tableprinter"
+	"github.com/spf13/cobra"
+	gitlab "gitlab.com/gitlab-org/api/client-go"
+)
+
+// NewPipelineCmd creates the pipeline command group.
+func NewPipelineCmd(f *cmdutil.Factory) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "pipeline <command>",
+		Short:   "Manage pipelines and CI/CD",
+		Long:    "View, run, and manage GitLab CI/CD pipelines.",
+		Aliases: []string{"ci", "pipe"},
+	}
+
+	cmd.AddCommand(newPipelineListCmd(f))
+	cmd.AddCommand(newPipelineViewCmd(f))
+	cmd.AddCommand(newPipelineRunCmd(f))
+	cmd.AddCommand(newPipelineCancelCmd(f))
+	cmd.AddCommand(newPipelineRetryCmd(f))
+	cmd.AddCommand(newPipelineDeleteCmd(f))
+	cmd.AddCommand(newPipelineJobsCmd(f))
+	cmd.AddCommand(newPipelineJobLogCmd(f))
+
+	return cmd
+}
+
+func newPipelineListCmd(f *cmdutil.Factory) *cobra.Command {
+	var (
+		status   string
+		ref      string
+		limit    int
+		jsonFlag bool
+		web      bool
+	)
+
+	cmd := &cobra.Command{
+		Use:     "list",
+		Short:   "List pipelines",
+		Aliases: []string{"ls"},
+		Example: `  $ glab pipeline list
+  $ glab pipeline list --status success --ref main
+  $ glab pipeline list --limit 50`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			if web {
+				remote, _ := f.Remote()
+				host := "gitlab.com"
+				if remote != nil {
+					host = remote.Host
+				}
+				return browser.Open(fmt.Sprintf("https://%s/%s/-/pipelines", host, project))
+			}
+
+			opts := &gitlab.ListProjectPipelinesOptions{
+				ListOptions: gitlab.ListOptions{PerPage: int64(limit)},
+			}
+
+			if status != "" {
+				pipelineStatus := gitlab.BuildStateValue(status)
+				opts.Status = &pipelineStatus
+			}
+			if ref != "" {
+				opts.Ref = &ref
+			}
+
+			pipelines, _, err := client.Pipelines.ListProjectPipelines(project, opts)
+			if err != nil {
+				return fmt.Errorf("listing pipelines: %w", err)
+			}
+
+			if len(pipelines) == 0 {
+				fmt.Fprintln(f.IOStreams.ErrOut, "No pipelines found")
+				return nil
+			}
+
+			if jsonFlag {
+				data, err := json.MarshalIndent(pipelines, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(f.IOStreams.Out, string(data))
+				return nil
+			}
+
+			tp := tableprinter.New(f.IOStreams.Out)
+			for _, p := range pipelines {
+				tp.AddRow(
+					fmt.Sprintf("#%d", p.ID),
+					p.Status,
+					p.Ref,
+					p.SHA[:8],
+					pipelineTimeAgo(p.CreatedAt),
+				)
+			}
+			return tp.Render()
+		},
+	}
+
+	cmd.Flags().StringVar(&status, "status", "", "Filter by status: running, pending, success, failed, canceled, skipped")
+	cmd.Flags().StringVar(&ref, "ref", "", "Filter by branch or tag")
+	cmd.Flags().IntVarP(&limit, "limit", "L", 30, "Maximum number of results")
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
+	cmd.Flags().BoolVarP(&web, "web", "w", false, "Open in browser")
+
+	return cmd
+}
+
+func newPipelineViewCmd(f *cmdutil.Factory) *cobra.Command {
+	var web bool
+	var jsonFlag bool
+
+	cmd := &cobra.Command{
+		Use:   "view [<id>]",
+		Short: "View a pipeline",
+		Example: `  $ glab pipeline view 12345
+  $ glab pipeline view 12345 --web`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			pipelineID, err := parsePipelineArg(args)
+			if err != nil {
+				return err
+			}
+
+			pipeline, _, err := client.Pipelines.GetPipeline(project, pipelineID)
+			if err != nil {
+				return fmt.Errorf("getting pipeline: %w", err)
+			}
+
+			if web {
+				return browser.Open(pipeline.WebURL)
+			}
+
+			if jsonFlag {
+				data, err := json.MarshalIndent(pipeline, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(f.IOStreams.Out, string(data))
+				return nil
+			}
+
+			out := f.IOStreams.Out
+			fmt.Fprintf(out, "Pipeline #%d\n", pipeline.ID)
+			fmt.Fprintf(out, "Status:   %s\n", pipeline.Status)
+			fmt.Fprintf(out, "Ref:      %s\n", pipeline.Ref)
+			fmt.Fprintf(out, "SHA:      %s\n", pipeline.SHA)
+			fmt.Fprintf(out, "Source:   %s\n", pipeline.Source)
+			if pipeline.User != nil {
+				fmt.Fprintf(out, "User:     %s\n", pipeline.User.Username)
+			}
+			fmt.Fprintf(out, "Created:  %s\n", pipelineTimeAgo(pipeline.CreatedAt))
+			if pipeline.StartedAt != nil {
+				fmt.Fprintf(out, "Started:  %s\n", pipelineTimeAgo(pipeline.StartedAt))
+			}
+			if pipeline.FinishedAt != nil {
+				fmt.Fprintf(out, "Finished: %s\n", pipelineTimeAgo(pipeline.FinishedAt))
+			}
+			fmt.Fprintf(out, "Duration: %ds\n", pipeline.Duration)
+			fmt.Fprintf(out, "URL:      %s\n", pipeline.WebURL)
+
+			// Show jobs
+			jobs, _, err := client.Jobs.ListPipelineJobs(project, pipelineID, nil)
+			if err == nil && len(jobs) > 0 {
+				fmt.Fprintln(out, "\nJobs:")
+				tp := tableprinter.New(out)
+				for _, j := range jobs {
+					tp.AddRow(
+						fmt.Sprintf("  %d", j.ID),
+						j.Name,
+						j.Stage,
+						j.Status,
+						fmt.Sprintf("%ds", int(j.Duration)),
+					)
+				}
+				_ = tp.Render()
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVarP(&web, "web", "w", false, "Open in browser")
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
+
+	return cmd
+}
+
+func newPipelineRunCmd(f *cmdutil.Factory) *cobra.Command {
+	var (
+		ref       string
+		variables []string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "run",
+		Short: "Run a new pipeline",
+		Aliases: []string{"create", "trigger"},
+		Example: `  $ glab pipeline run --ref main
+  $ glab pipeline run --ref develop --variables KEY1=value1,KEY2=value2`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			opts := &gitlab.CreatePipelineOptions{
+				Ref: &ref,
+			}
+
+			if len(variables) > 0 {
+				var vars []*gitlab.PipelineVariableOptions
+				for _, v := range variables {
+					parts := strings.SplitN(v, "=", 2)
+					if len(parts) != 2 {
+						return fmt.Errorf("invalid variable format: %s (use KEY=value)", v)
+					}
+					varType := gitlab.VariableTypeValue("env_var")
+					vars = append(vars, &gitlab.PipelineVariableOptions{
+						Key:          &parts[0],
+						Value:        &parts[1],
+						VariableType: &varType,
+					})
+				}
+				opts.Variables = &vars
+			}
+
+			pipeline, _, err := client.Pipelines.CreatePipeline(project, opts)
+			if err != nil {
+				return fmt.Errorf("creating pipeline: %w", err)
+			}
+
+			out := f.IOStreams.Out
+			fmt.Fprintf(out, "Created pipeline #%d\n", pipeline.ID)
+			fmt.Fprintf(out, "Status: %s\n", pipeline.Status)
+			fmt.Fprintf(out, "%s\n", pipeline.WebURL)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&ref, "ref", "", "Branch or tag to run pipeline on (required)")
+	cmd.Flags().StringSliceVar(&variables, "variables", nil, "Pipeline variables (KEY=value)")
+	_ = cmd.MarkFlagRequired("ref")
+
+	return cmd
+}
+
+func newPipelineCancelCmd(f *cmdutil.Factory) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "cancel [<id>]",
+		Short: "Cancel a running pipeline",
+		Example: `  $ glab pipeline cancel 12345`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			pipelineID, err := parsePipelineArg(args)
+			if err != nil {
+				return err
+			}
+
+			pipeline, _, err := client.Pipelines.CancelPipelineBuild(project, pipelineID)
+			if err != nil {
+				return fmt.Errorf("canceling pipeline: %w", err)
+			}
+
+			fmt.Fprintf(f.IOStreams.Out, "Canceled pipeline #%d (status: %s)\n", pipeline.ID, pipeline.Status)
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+func newPipelineRetryCmd(f *cmdutil.Factory) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "retry [<id>]",
+		Short: "Retry a failed pipeline",
+		Example: `  $ glab pipeline retry 12345`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			pipelineID, err := parsePipelineArg(args)
+			if err != nil {
+				return err
+			}
+
+			pipeline, _, err := client.Pipelines.RetryPipelineBuild(project, pipelineID)
+			if err != nil {
+				return fmt.Errorf("retrying pipeline: %w", err)
+			}
+
+			fmt.Fprintf(f.IOStreams.Out, "Retried pipeline #%d (status: %s)\n", pipeline.ID, pipeline.Status)
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+func newPipelineDeleteCmd(f *cmdutil.Factory) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "delete [<id>]",
+		Short:   "Delete a pipeline",
+		Example: `  $ glab pipeline delete 12345`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			pipelineID, err := parsePipelineArg(args)
+			if err != nil {
+				return err
+			}
+
+			_, err = client.Pipelines.DeletePipeline(project, pipelineID)
+			if err != nil {
+				return fmt.Errorf("deleting pipeline: %w", err)
+			}
+
+			fmt.Fprintf(f.IOStreams.Out, "Deleted pipeline #%d\n", pipelineID)
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+func newPipelineJobsCmd(f *cmdutil.Factory) *cobra.Command {
+	var jsonFlag bool
+
+	cmd := &cobra.Command{
+		Use:   "jobs [<pipeline-id>]",
+		Short: "List jobs in a pipeline",
+		Example: `  $ glab pipeline jobs 12345`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			pipelineID, err := parsePipelineArg(args)
+			if err != nil {
+				return err
+			}
+
+			jobs, _, err := client.Jobs.ListPipelineJobs(project, pipelineID, nil)
+			if err != nil {
+				return fmt.Errorf("listing jobs: %w", err)
+			}
+
+			if len(jobs) == 0 {
+				fmt.Fprintln(f.IOStreams.ErrOut, "No jobs found")
+				return nil
+			}
+
+			if jsonFlag {
+				data, err := json.MarshalIndent(jobs, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(f.IOStreams.Out, string(data))
+				return nil
+			}
+
+			tp := tableprinter.New(f.IOStreams.Out)
+			for _, j := range jobs {
+				tp.AddRow(
+					fmt.Sprintf("%d", j.ID),
+					j.Name,
+					j.Stage,
+					j.Status,
+					fmt.Sprintf("%.0fs", j.Duration),
+				)
+			}
+			return tp.Render()
+		},
+	}
+
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
+
+	return cmd
+}
+
+func newPipelineJobLogCmd(f *cmdutil.Factory) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "job-log [<job-id>]",
+		Short:   "View the log/trace of a job",
+		Aliases: []string{"trace"},
+		Example: `  $ glab pipeline job-log 67890`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			if len(args) == 0 {
+				return fmt.Errorf("job ID required")
+			}
+
+			jobID, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid job ID: %s", args[0])
+			}
+
+			reader, _, err := client.Jobs.GetTraceFile(project, jobID)
+			if err != nil {
+				return fmt.Errorf("getting job trace: %w", err)
+			}
+
+			buf := make([]byte, 4096)
+			for {
+				n, readErr := reader.Read(buf)
+				if n > 0 {
+					fmt.Fprint(f.IOStreams.Out, string(buf[:n]))
+				}
+				if readErr != nil {
+					break
+				}
+			}
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+func parsePipelineArg(args []string) (int64, error) {
+	if len(args) == 0 {
+		return 0, fmt.Errorf("pipeline ID required")
+	}
+	id := strings.TrimPrefix(args[0], "#")
+	n, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid pipeline ID: %s", args[0])
+	}
+	return n, nil
+}
+
+func pipelineTimeAgo(t *time.Time) string {
+	return timeAgo(t)
+}
