@@ -290,13 +290,16 @@ func ClientIDForHost(host string) string {
 }
 
 // TokenForHost returns the authentication token for a given host.
+// Environment-variable tokens are scoped to the default host to prevent
+// them from being forwarded to AI-supplied arbitrary host names.
 func TokenForHost(host string) (string, string) {
-	// Check environment variables first
-	if t := os.Getenv("GITLAB_TOKEN"); t != "" {
-		return t, "GITLAB_TOKEN"
-	}
-	if t := os.Getenv("GLAB_TOKEN"); t != "" {
-		return t, "GLAB_TOKEN"
+	if host == DefaultHost() {
+		if t := os.Getenv("GITLAB_TOKEN"); t != "" {
+			return t, "GITLAB_TOKEN"
+		}
+		if t := os.Getenv("GLAB_TOKEN"); t != "" {
+			return t, "GLAB_TOKEN"
+		}
 	}
 
 	hosts, err := LoadHosts()

@@ -53,6 +53,7 @@ func NewRootCmd(version string) *cobra.Command {
 	cmd.AddCommand(NewBrowseCmd(f))
 	cmd.AddCommand(NewConfigCmd(f))
 	cmd.AddCommand(NewCompletionCmd())
+	cmd.AddCommand(NewMCPCmd(f))
 
 	// Use grouped help only on the root command
 	cobra.AddTemplateFunc("isRootCmd", func(cmd *cobra.Command) bool {
@@ -94,6 +95,7 @@ Utility Commands:
   browse      Open project in browser
   config      Manage configuration
   completion  Generate shell completion scripts
+  mcp         Model Context Protocol server
 {{else}}
 Available Commands:{{range .Commands}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
   {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}

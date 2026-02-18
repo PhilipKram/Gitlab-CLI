@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/PhilipKram/gitlab-cli/internal/config"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
@@ -17,6 +18,10 @@ type Client struct {
 // NewClient creates a new authenticated GitLab API client.
 // It automatically selects the correct client type based on the stored auth method.
 func NewClient(host string) (*Client, error) {
+	// Reject hosts with scheme, path, or credential characters to prevent SSRF.
+	if strings.ContainsAny(host, "/:@?#") {
+		return nil, fmt.Errorf("invalid host %q: must be a plain hostname (e.g. gitlab.example.com)", host)
+	}
 	token, _ := config.TokenForHost(host)
 	if token == "" {
 		return nil, fmt.Errorf("not authenticated with %s; run 'glab auth login --hostname %s'", host, host)
