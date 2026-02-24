@@ -50,17 +50,20 @@ func Login(host, token string, stdin io.Reader) (*Status, error) {
 		return nil, fmt.Errorf("authenticating with %s: %w", host, err)
 	}
 
-	// Save the host configuration
+	// Save the host configuration (merge into existing to preserve client_id, etc.)
 	hosts, err := config.LoadHosts()
 	if err != nil {
 		hosts = make(config.HostsConfig)
 	}
 
-	hosts[host] = &config.HostConfig{
-		Token:      token,
-		User:       user.Username,
-		AuthMethod: "pat",
+	hc, ok := hosts[host]
+	if !ok {
+		hc = &config.HostConfig{}
+		hosts[host] = hc
 	}
+	hc.Token = token
+	hc.User = user.Username
+	hc.AuthMethod = "pat"
 
 	if err := config.SaveHosts(hosts); err != nil {
 		return nil, fmt.Errorf("saving credentials: %w", err)

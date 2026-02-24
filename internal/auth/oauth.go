@@ -122,17 +122,20 @@ func OAuthFlow(host, clientID, redirectURI, scopes string, out io.Writer, openBr
 		return nil, fmt.Errorf("authenticating with %s: %w", host, err)
 	}
 
-	// Save credentials
+	// Save credentials (merge into existing host config to preserve client_id, etc.)
 	hosts, err := config.LoadHosts()
 	if err != nil {
 		hosts = make(config.HostsConfig)
 	}
 
-	hosts[host] = &config.HostConfig{
-		Token:      tokenResp.AccessToken,
-		User:       user.Username,
-		AuthMethod: "oauth",
+	hc, ok := hosts[host]
+	if !ok {
+		hc = &config.HostConfig{}
+		hosts[host] = hc
 	}
+	hc.Token = tokenResp.AccessToken
+	hc.User = user.Username
+	hc.AuthMethod = "oauth"
 
 	if err := config.SaveHosts(hosts); err != nil {
 		return nil, fmt.Errorf("saving credentials: %w", err)

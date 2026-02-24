@@ -31,7 +31,6 @@ func newAuthLoginCmd(f *cmdutil.Factory) *cobra.Command {
 	var hostname string
 	var token string
 	var stdin bool
-	var web bool
 	var clientID string
 	var gitProtocol string
 
@@ -40,78 +39,43 @@ func newAuthLoginCmd(f *cmdutil.Factory) *cobra.Command {
 		Short: "Authenticate with a GitLab instance",
 		Long: `Authenticate with a GitLab host.
 
-When run interactively (no flags), you will be prompted for host, auth method,
-and git protocol — similar to the GitHub CLI experience.
+By default, authentication uses OAuth (browser-based). On first run you will be
+prompted for host, git protocol, and OAuth application ID. These are stored so
+subsequent logins go straight to the browser with no prompts.
 
-The default hostname is gitlab.com. Override with --hostname.
-
-Authentication methods:
-  - Personal access token: provide via --token or pipe through stdin
-  - OAuth (browser-based): use --web with --client-id
+Alternatively, authenticate with a personal access token using --token or --stdin.
 
 For OAuth, you must first create an OAuth application in your GitLab instance
-under Settings > Applications. Set the redirect URI to http://127.0.0.1 (any port)
-and enable the "api", "read_user", and "read_repository" scopes.
-
-Required token scopes: api, read_user, read_repository.`,
-		Example: `  # Interactive login (prompts for everything)
+under Settings > Applications. Set the redirect URI to http://localhost:7171/auth/redirect
+and enable the "api", "read_user", and "read_repository" scopes.`,
+		Example: `  # Login via OAuth (default, opens browser)
   $ glab auth login
 
-  # Authenticate with a token
+  # Login to a specific host via OAuth
+  $ glab auth login --hostname gitlab.example.com
+
+  # Re-login (skips all prompts if previously configured)
+  $ glab auth login
+
+  # Authenticate with a personal access token
   $ glab auth login --token glpat-xxxxxxxxxxxxxxxxxxxx
-
-  # Authenticate via OAuth in browser
-  $ glab auth login --web --client-id <your-app-id>
-
-  # Authenticate with a self-hosted instance
-  $ glab auth login --hostname gitlab.example.com --token glpat-xxxx
 
   # Pipe a token from a file
   $ glab auth login --stdin < token.txt`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ios := f.IOStreams
 			out := ios.Out
-			errOut := ios.ErrOut
 
-			// Determine if we should run interactively
-			interactive := !cmd.Flags().Changed("token") &&
-				!cmd.Flags().Changed("stdin") &&
-				!cmd.Flags().Changed("web") &&
-				ios.IsStdinTTY() && ios.IsTerminal()
+			hasToken := cmd.Flags().Changed("token") || cmd.Flags().Changed("stdin")
 
-			if interactive {
+			// If no explicit token provided, default to OAuth flow
+			if !hasToken {
 				return loginInteractive(f, hostname, gitProtocol, clientID)
 			}
 
-			// Non-interactive path (flags-based, like before)
+			// Token-based path (--token or --stdin)
 			if hostname == "" {
 				hostname = config.DefaultHost()
-			}
-
-			if web {
-				if clientID == "" {
-					clientID = config.ClientIDForHost(hostname)
-				}
-				if clientID == "" {
-					return fmt.Errorf("--client-id is required for OAuth login (or set it with: glab config set client_id <app-id> --host %s)", hostname)
-				}
-
-				redirectURI := config.RedirectURIForHost(hostname)
-				scopes := config.OAuthScopesForHost(hostname)
-				status, err := auth.OAuthFlow(hostname, clientID, redirectURI, scopes, errOut, browser.Open)
-				if err != nil {
-					return err
-				}
-
-				if gitProtocol != "" {
-					if err := saveProtocol(hostname, gitProtocol); err != nil {
-						return err
-					}
-					fmt.Fprintf(errOut, "- glab config set -h %s git_protocol %s\n", hostname, gitProtocol)
-				}
-
-				fmt.Fprintf(out, "✓ Logged in to %s as %s\n", status.Host, status.User)
-				return nil
 			}
 
 			var stdinReader = ios.In
@@ -128,7 +92,6 @@ Required token scopes: api, read_user, read_repository.`,
 				if err := saveProtocol(hostname, gitProtocol); err != nil {
 					return err
 				}
-				fmt.Fprintf(errOut, "- glab config set -h %s git_protocol %s\n", hostname, gitProtocol)
 			}
 
 			fmt.Fprintf(out, "✓ Logged in to %s as %s\n", status.Host, status.User)
@@ -139,21 +102,33 @@ Required token scopes: api, read_user, read_repository.`,
 	cmd.Flags().StringVar(&hostname, "hostname", "", "GitLab hostname (default: gitlab.com)")
 	cmd.Flags().StringVarP(&token, "token", "t", "", "Personal access token")
 	cmd.Flags().BoolVar(&stdin, "stdin", false, "Read token from stdin")
-	cmd.Flags().BoolVarP(&web, "web", "w", false, "Authenticate via OAuth in the browser")
-	cmd.Flags().StringVar(&clientID, "client-id", "", "OAuth application ID (required with --web)")
+	cmd.Flags().StringVar(&clientID, "client-id", "", "OAuth application ID")
 	cmd.Flags().StringVarP(&gitProtocol, "git-protocol", "p", "", "Preferred git protocol for operations (https or ssh)")
 
 	return cmd
 }
 
-// loginInteractive implements the full interactive login flow, similar to `gh auth login`.
+// loginInteractive implements the full interactive login flow.
+// On first run it prompts for host, protocol, and client_id, then stores them.
+// On subsequent runs it reuses stored values and goes straight to OAuth.
 func loginInteractive(f *cmdutil.Factory, presetHost, presetProto, presetClientID string) error {
 	in := f.IOStreams.In
 	out := f.IOStreams.Out
 	errOut := f.IOStreams.ErrOut
 
-	// ── Step 1: Choose host ──────────────────────────────────────────
+	// Load existing hosts to check for previously stored config
+	existingHosts, _ := config.LoadHosts()
+
+	// ── Step 1: Determine host ──────────────────────────────────────
 	hostname := presetHost
+	if hostname == "" {
+		// If there's exactly one existing host, reuse it
+		if len(existingHosts) == 1 {
+			for h := range existingHosts {
+				hostname = h
+			}
+		}
+	}
 	if hostname == "" {
 		idx, err := prompt.Select(in, errOut,
 			"What GitLab instance do you want to log into?",
@@ -175,8 +150,14 @@ func loginInteractive(f *cmdutil.Factory, presetHost, presetProto, presetClientI
 		}
 	}
 
-	// ── Step 2: Choose git protocol ──────────────────────────────────
+	// ── Step 2: Determine git protocol ──────────────────────────────
 	gitProtocol := presetProto
+	if gitProtocol == "" {
+		// Check if protocol is already stored for this host
+		if hc, ok := existingHosts[hostname]; ok && hc.Protocol != "" {
+			gitProtocol = hc.Protocol
+		}
+	}
 	if gitProtocol == "" {
 		idx, err := prompt.Select(in, errOut,
 			"What is your preferred protocol for Git operations on this host?",
@@ -191,63 +172,39 @@ func loginInteractive(f *cmdutil.Factory, presetHost, presetProto, presetClientI
 		}
 	}
 
-	// ── Step 3: Choose auth method ───────────────────────────────────
-	idx, err := prompt.Select(in, errOut,
-		"How would you like to authenticate glab?",
-		[]string{"Login with a web browser", "Paste a token"})
+	// ── Step 3: Authenticate via OAuth ──────────────────────────────
+	clientID := presetClientID
+	if clientID == "" {
+		clientID = config.ClientIDForHost(hostname)
+	}
+	if clientID == "" {
+		var err error
+		clientID, err = prompt.Input(in, errOut,
+			fmt.Sprintf("OAuth Application ID (create one at https://%s/-/user_settings/applications):", hostname))
+		if err != nil {
+			return err
+		}
+		if clientID == "" {
+			return fmt.Errorf("client ID cannot be empty")
+		}
+		// Persist the client_id so it's not asked again
+		if err := config.SetHostValue(hostname, "client_id", clientID); err != nil {
+			return err
+		}
+	}
+
+	fmt.Fprintln(errOut)
+	redirectURI := config.RedirectURIForHost(hostname)
+	scopes := config.OAuthScopesForHost(hostname)
+	status, err := auth.OAuthFlow(hostname, clientID, redirectURI, scopes, errOut, browser.Open)
 	if err != nil {
 		return err
 	}
 
-	var status *auth.Status
-	if idx == 0 {
-		// OAuth (web browser) flow
-		clientID := presetClientID
-		if clientID == "" {
-			clientID = config.ClientIDForHost(hostname)
-		}
-		if clientID == "" {
-			clientID, err = prompt.Input(in, errOut,
-				fmt.Sprintf("OAuth Application ID (create one at https://%s/-/user_settings/applications):", hostname))
-			if err != nil {
-				return err
-			}
-			if clientID == "" {
-				return fmt.Errorf("client ID cannot be empty")
-			}
-		}
-
-		fmt.Fprintln(errOut)
-		redirectURI := config.RedirectURIForHost(hostname)
-		scopes := config.OAuthScopesForHost(hostname)
-		status, err = auth.OAuthFlow(hostname, clientID, redirectURI, scopes, errOut, browser.Open)
-		if err != nil {
-			return err
-		}
-	} else {
-		// Token-based flow
-		fmt.Fprintf(errOut, "\nTip: you can generate a Personal Access Token at https://%s/-/user_settings/personal_access_tokens\n", hostname)
-		fmt.Fprintf(errOut, "The minimum required scopes are: %s\n", auth.ScopesDescription())
-
-		tokenStr, err := prompt.Password(errOut, "Paste your authentication token:")
-		if err != nil {
-			return err
-		}
-		if tokenStr == "" {
-			return fmt.Errorf("token cannot be empty")
-		}
-
-		status, err = auth.Login(hostname, tokenStr, nil)
-		if err != nil {
-			return err
-		}
-	}
-
-	// ── Step 4: Configure git protocol ───────────────────────────────
+	// ── Step 4: Configure git protocol ──────────────────────────────
 	if err := saveProtocol(hostname, gitProtocol); err != nil {
 		return err
 	}
-	fmt.Fprintf(errOut, "- glab config set -h %s git_protocol %s\n", hostname, gitProtocol)
 
 	fmt.Fprintf(out, "✓ Logged in to %s as %s\n", status.Host, status.User)
 	return nil
@@ -285,7 +242,7 @@ func newAuthLogoutCmd(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&hostname, "hostname", "h", "", "GitLab hostname")
+	cmd.Flags().StringVar(&hostname, "hostname", "", "GitLab hostname")
 
 	return cmd
 }
@@ -343,7 +300,7 @@ func newAuthTokenCmd(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&hostname, "hostname", "h", "", "GitLab hostname")
+	cmd.Flags().StringVar(&hostname, "hostname", "", "GitLab hostname")
 
 	return cmd
 }

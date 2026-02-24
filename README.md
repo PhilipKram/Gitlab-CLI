@@ -36,9 +36,12 @@ make build
 
 ## Authentication
 
-### Interactive login (recommended)
+### OAuth login (default)
 
-Just run `glab auth login` and follow the prompts — the same experience as `gh auth login`:
+`glab` authenticates via OAuth by default. Just run `glab auth login` and it opens
+your browser — no flags needed.
+
+**First run** — prompts for host, protocol, and OAuth application ID, then stores everything:
 
 ```
 $ glab auth login
@@ -50,37 +53,35 @@ $ glab auth login
   [1] HTTPS
   [2] SSH
   Choice: 1
-? How would you like to authenticate glab?
-  [1] Login with a web browser
-  [2] Paste a token
-  Choice: 1
 ? OAuth Application ID: <your-app-id>
 
 ! Opening gitlab.com in your browser...
 - Waiting for authentication...
-- glab config set -h gitlab.com git_protocol https
 ✓ Logged in to gitlab.com as username
 ```
 
-### OAuth (browser-based login)
+**Subsequent runs** — all settings are remembered, goes straight to the browser:
 
-Authenticate via OAuth in the browser. You first need to create an OAuth application
-in your GitLab instance under **Settings > Applications** with:
+```
+$ glab auth login
+! Opening gitlab.com in your browser...
+- Waiting for authentication...
+✓ Logged in to gitlab.com as username
+```
+
+### OAuth setup
+
+Before using OAuth, create an OAuth application in your GitLab instance
+under **Settings > Applications** with:
 - Redirect URI: `http://localhost:7171/auth/redirect`
 - Scopes: `api`, `read_user`, `write_repository`, `openid`, `profile`
 
-```bash
-# Interactive OAuth login
-glab auth login --web --client-id <your-app-id>
-
-# OAuth with a self-hosted instance
-glab auth login --web --client-id <your-app-id> --hostname gitlab.example.com
-```
-
 The CLI starts a local server on port 7171, opens your browser for authorization, and
-automatically exchanges the code for a token using PKCE.
+automatically exchanges the code for a token using PKCE — no client secret needed.
 
 ### Token-based login
+
+If you prefer personal access tokens over OAuth, use `--token` or `--stdin`:
 
 ```bash
 # Login with a personal access token
@@ -106,11 +107,10 @@ Required token scopes: `api`, `read_user`, `write_repository`
 | Flag | Description |
 |------|-------------|
 | `--hostname` | GitLab hostname (default: gitlab.com) |
-| `--token, -t` | Personal access token |
-| `--web, -w` | Authenticate via OAuth in the browser |
-| `--client-id` | OAuth application ID (required with `--web`) |
+| `--token, -t` | Personal access token (skips OAuth, uses PAT) |
+| `--client-id` | OAuth application ID |
 | `--git-protocol, -p` | Preferred git protocol: `https` or `ssh` |
-| `--stdin` | Read token from standard input |
+| `--stdin` | Read token from standard input (skips OAuth, uses PAT) |
 
 ### Per-host configuration
 
@@ -126,6 +126,8 @@ glab config set redirect_uri http://localhost:8080/callback --host gitlab.exampl
 # Store custom OAuth scopes
 glab config set oauth_scopes "api read_user write_repository" --host gitlab.example.com
 ```
+
+These values are also automatically saved during your first interactive `glab auth login`.
 
 ## Global Flags
 

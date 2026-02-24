@@ -178,7 +178,7 @@ func (c *Config) Get(key string) (string, error) {
 	}
 }
 
-// Set updates a config value by key name.
+// Set updates a config value by key name and persists it to disk.
 func (c *Config) Set(key, value string) error {
 	switch key {
 	case "editor":
@@ -194,7 +194,7 @@ func (c *Config) Set(key, value string) error {
 	default:
 		return fmt.Errorf("unknown config key: %s", key)
 	}
-	return nil
+	return c.Save()
 }
 
 // Keys returns all valid config keys.

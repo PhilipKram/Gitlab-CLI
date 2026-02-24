@@ -111,10 +111,6 @@ Available per-host keys (use with --host):
 				return err
 			}
 
-			if err := cfg.Save(); err != nil {
-				return err
-			}
-
 			fmt.Fprintf(f.IOStreams.Out, "Set %s = %s\n", args[0], args[1])
 			return nil
 		},
