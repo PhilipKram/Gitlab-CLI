@@ -498,6 +498,8 @@
                 <tr><td>glab config set &lt;key&gt; &lt;val&gt;</td><td>Set a configuration value (use <code>--host</code> for per-host keys)</td></tr>
                 <tr><td>glab config list</td><td>List all configuration values</td></tr>
                 <tr><td>glab completion &lt;shell&gt;</td><td>Generate shell completions</td></tr>
+                <tr><td>glab upgrade</td><td>Upgrade glab to the latest version (alias: <code>update</code>)</td></tr>
+                <tr><td>glab upgrade --check</td><td>Check for a newer version without installing</td></tr>
             </table>
         </div>
     </div>
@@ -558,6 +560,21 @@
 
 <span class="comment"># Direct API access with specific host</span>
 <span class="cmd">glab api '/projects?membership=true' --hostname gitlab.example.com</span></code></pre>
+
+        <h3>Upgrading</h3>
+<pre><code><span class="comment"># Check if a newer version is available</span>
+<span class="cmd">glab upgrade --check</span>
+
+<span class="comment"># Upgrade to the latest version</span>
+<span class="cmd">glab upgrade</span>
+
+<span class="comment"># Skip confirmation prompt</span>
+<span class="cmd">glab upgrade --yes</span></code></pre>
+        <p style="margin-top: 8px; color: var(--text-muted); font-size: 0.9rem;">
+            For binary installs, <code>glab upgrade</code> downloads the latest release with checksum verification and replaces the binary in-place.
+            Homebrew and package manager installs are detected automatically and print the appropriate upgrade command instead.
+            A startup banner also notifies you when a new version is available &mdash; the check runs in the background and never slows down your commands.
+        </p>
 
         <h3>JSON Output &amp; Scripting</h3>
 <pre><code><span class="comment"># Get MR data as JSON</span>

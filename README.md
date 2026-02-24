@@ -178,6 +178,7 @@ When no `--repo` is specified, glab resolves the host from the git remote. If th
 | `glab browse` | Open project in browser |
 | `glab config` | Manage configuration |
 | `glab completion` | Generate shell completion scripts |
+| `glab upgrade` | Upgrade glab to the latest version |
 
 ## Usage Examples
 
@@ -225,6 +226,31 @@ glab repo fork owner/repo --clone
 glab repo view
 glab repo list --owner my-group
 ```
+
+### Upgrading
+
+```bash
+# Check for a newer version
+glab upgrade --check
+
+# Upgrade to the latest version
+glab upgrade
+
+# Skip the confirmation prompt
+glab upgrade --yes
+```
+
+When installed via a binary release, `glab upgrade` downloads the latest release, verifies its checksum, and replaces the binary in-place. If glab was installed via Homebrew or a system package, the command will print the appropriate package manager instruction instead.
+
+A startup banner also notifies you when a new version is available:
+
+```
+A new version of glab is available: v0.0.11 → v0.0.12
+Run `glab upgrade` to update, or download from:
+https://github.com/PhilipKram/Gitlab-CLI/releases/tag/v0.0.12
+```
+
+The version check runs in the background and caches its result locally, so it never slows down your commands.
 
 ### Configuration
 
@@ -297,7 +323,7 @@ This will:
 1. Run tests
 2. Build cross-platform binaries (linux/darwin/windows, amd64/arm64)
 3. Create a GitHub Release with archives and checksums
-4. Update the Homebrew formula in the `HomebrewFormula` directory
+4. Update the Homebrew formula in the [homebrew-tap](https://github.com/PhilipKram/homebrew-tap) repo
 5. Publish deb/rpm packages
 
 ### Shell Completions
