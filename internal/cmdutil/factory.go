@@ -16,6 +16,7 @@ type Factory struct {
 	Config   func() (*config.Config, error)
 	Client   func() (*api.Client, error)
 	Remote   func() (*git.Remote, error)
+	Version  string
 
 	// repoOverride is set via --repo flag (HOST/OWNER/REPO format)
 	repoOverride string
