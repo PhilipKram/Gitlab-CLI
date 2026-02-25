@@ -16,10 +16,12 @@ import (
 // NewAPICmd creates the api command.
 func NewAPICmd(f *cmdutil.Factory) *cobra.Command {
 	var (
-		method   string
-		body     string
-		headers  []string
-		hostname string
+		method       string
+		body         string
+		headers      []string
+		hostname     string
+		fields       []string
+		methodSet    bool
 	)
 
 	cmd := &cobra.Command{
@@ -33,10 +35,45 @@ Or it can be a full URL starting with "http".`,
   $ glab api projects/:id/merge_requests
   $ glab api users --method GET
   $ glab api projects/:id/issues --method POST --body '{"title":"Bug"}'
+  $ glab api projects/:id/issues -X POST -f title=Bug -f description="Fix it"
+  $ glab api projects/:id/merge_requests/1/notes -f body="Looks good!"
   $ glab api graphql --method POST --body '{"query":"{ currentUser { name } }"}'`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			methodSet = cmd.Flags().Changed("method")
 			endpoint := args[0]
+
+			// Build JSON body from --field flags (validate early before auth)
+			if len(fields) > 0 {
+				jsonObj := make(map[string]interface{})
+
+				// If --body was also provided, use it as the base
+				if body != "" {
+					if err := json.Unmarshal([]byte(body), &jsonObj); err != nil {
+						return fmt.Errorf("parsing --body JSON: %w", err)
+					}
+				}
+
+				// Overlay --field values
+				for _, f := range fields {
+					parts := strings.SplitN(f, "=", 2)
+					if len(parts) != 2 {
+						return fmt.Errorf("invalid field format %q, expected key=value", f)
+					}
+					jsonObj[parts[0]] = parts[1]
+				}
+
+				b, err := json.Marshal(jsonObj)
+				if err != nil {
+					return fmt.Errorf("encoding fields to JSON: %w", err)
+				}
+				body = string(b)
+
+				// Default to POST when fields are provided and method wasn't explicitly set
+				if !methodSet {
+					method = "POST"
+				}
+			}
 
 			// Resolve host: --hostname flag > factory client > default
 			host := hostname
@@ -121,6 +158,7 @@ Or it can be a full URL starting with "http".`,
 
 	cmd.Flags().StringVarP(&method, "method", "X", "GET", "HTTP method")
 	cmd.Flags().StringVar(&body, "body", "", "Request body (JSON)")
+	cmd.Flags().StringArrayVarP(&fields, "field", "f", nil, `Add a string field in "key=value" format`)
 	cmd.Flags().StringSliceVarP(&headers, "header", "H", nil, "Additional headers (key:value)")
 	cmd.Flags().StringVar(&hostname, "hostname", "", "GitLab hostname to use")
 
