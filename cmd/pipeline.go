@@ -271,7 +271,7 @@ func newPipelineRunCmd(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&ref, "ref", "", "Branch or tag to run pipeline on (required)")
+	cmd.Flags().StringVarP(&ref, "ref", "b", "", "Branch or tag to run pipeline on (required)")
 	cmd.Flags().StringSliceVar(&variables, "variables", nil, "Pipeline variables (KEY=value)")
 	_ = cmd.MarkFlagRequired("ref")
 
