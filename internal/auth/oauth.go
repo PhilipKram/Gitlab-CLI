@@ -134,6 +134,17 @@ func OAuthFlow(host, clientID, redirectURI, scopes string, out io.Writer, openBr
 		hosts[host] = hc
 	}
 	hc.Token = tokenResp.AccessToken
+	if tokenResp.RefreshToken != "" {
+		hc.RefreshToken = tokenResp.RefreshToken
+	}
+	createdAt := tokenResp.CreatedAt
+	if createdAt == 0 {
+		createdAt = time.Now().Unix()
+	}
+	hc.TokenCreatedAt = createdAt
+	if tokenResp.ExpiresIn > 0 {
+		hc.TokenExpiresAt = createdAt + int64(tokenResp.ExpiresIn)
+	}
 	hc.User = user.Username
 	hc.AuthMethod = "oauth"
 
@@ -273,6 +284,70 @@ func generateState() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+// RefreshOAuthToken refreshes an expired OAuth access token using the stored refresh token.
+// On success it updates the token, refresh token, and expiry in hosts.json and returns the new access token.
+func RefreshOAuthToken(host string) (string, error) {
+	hosts, err := config.LoadHosts()
+	if err != nil {
+		return "", fmt.Errorf("loading hosts config: %w", err)
+	}
+	hc, ok := hosts[host]
+	if !ok {
+		return "", fmt.Errorf("no configuration for host: %s", host)
+	}
+	if hc.RefreshToken == "" {
+		return "", fmt.Errorf("no refresh token stored for %s; run 'glab auth login' to re-authenticate", host)
+	}
+
+	tokenURL := fmt.Sprintf("https://%s/oauth/token", host)
+	data := url.Values{
+		"client_id":     {hc.ClientID},
+		"refresh_token": {hc.RefreshToken},
+		"grant_type":    {"refresh_token"},
+		"redirect_uri":  {hc.RedirectURI},
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.PostForm(tokenURL, data)
+	if err != nil {
+		return "", fmt.Errorf("requesting token refresh: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("reading token refresh response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("token refresh failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp OAuthTokenResponse
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return "", fmt.Errorf("parsing token refresh response: %w", err)
+	}
+
+	hc.Token = tokenResp.AccessToken
+	if tokenResp.RefreshToken != "" {
+		hc.RefreshToken = tokenResp.RefreshToken
+	}
+	createdAt := tokenResp.CreatedAt
+	if createdAt == 0 {
+		createdAt = time.Now().Unix()
+	}
+	hc.TokenCreatedAt = createdAt
+	if tokenResp.ExpiresIn > 0 {
+		hc.TokenExpiresAt = createdAt + int64(tokenResp.ExpiresIn)
+	}
+
+	if err := config.SaveHosts(hosts); err != nil {
+		return "", fmt.Errorf("saving refreshed credentials: %w", err)
+	}
+
+	return tokenResp.AccessToken, nil
 }
 
 // ScopesDescription returns a human-readable description of the required scopes.

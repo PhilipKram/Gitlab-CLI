@@ -13,14 +13,15 @@ import (
 
 // Status represents the authentication status for a host.
 type Status struct {
-	Host       string
-	User       string
-	Token      string
-	Source     string
-	AuthMethod string // "pat", "oauth", or ""
-	Active     bool
-	HasError   bool
-	Error      string
+	Host           string
+	User           string
+	Token          string
+	Source         string
+	AuthMethod     string // "pat", "oauth", or ""
+	TokenExpiresAt int64  // Unix timestamp; 0 if not set
+	Active         bool
+	HasError       bool
+	Error          string
 }
 
 // Login authenticates the user with a GitLab instance.
@@ -130,12 +131,13 @@ func GetStatus() ([]Status, error) {
 
 	for host, hc := range hosts {
 		s := Status{
-			Host:       host,
-			User:       hc.User,
-			Token:      maskToken(hc.Token),
-			Source:     host,
-			AuthMethod: hc.AuthMethod,
-			Active:     true,
+			Host:           host,
+			User:           hc.User,
+			Token:          maskToken(hc.Token),
+			Source:         host,
+			AuthMethod:     hc.AuthMethod,
+			TokenExpiresAt: hc.TokenExpiresAt,
+			Active:         true,
 		}
 		statuses = append(statuses, s)
 	}

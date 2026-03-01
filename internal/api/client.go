@@ -2,7 +2,9 @@ package api
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/PhilipKram/gitlab-cli/internal/auth"
 	"github.com/PhilipKram/gitlab-cli/internal/config"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 	"golang.org/x/oauth2"
@@ -17,13 +19,17 @@ type Client struct {
 // NewClient creates a new authenticated GitLab API client.
 // It automatically selects the correct client type based on the stored auth method.
 func NewClient(host string) (*Client, error) {
-	token, _ := config.TokenForHost(host)
+	token, tokenSource := config.TokenForHost(host)
 	if token == "" {
 		return nil, fmt.Errorf("not authenticated with %s; run 'glab auth login --hostname %s'", host, host)
 	}
 
 	authMethod := config.AuthMethodForHost(host)
+	// Only auto-refresh tokens from hosts.json, not env-provided tokens
 	if authMethod == "oauth" {
+		if tokenSource != "GITLAB_TOKEN" && tokenSource != "GLAB_TOKEN" {
+			token = RefreshOAuthTokenIfNeeded(host, token)
+		}
 		return NewOAuthClient(host, token)
 	}
 
@@ -90,4 +96,33 @@ func APIURL(host string) string {
 // WebURL returns the web URL for a given host and path.
 func WebURL(host, path string) string {
 	return fmt.Sprintf("https://%s/%s", host, path)
+}
+
+// RefreshOAuthTokenIfNeeded checks if the OAuth token is expired (or about to expire)
+// and refreshes it. Returns the refreshed token on success, or the original token on failure.
+func RefreshOAuthTokenIfNeeded(host, currentToken string) string {
+	hosts, err := config.LoadHosts()
+	if err != nil {
+		return currentToken
+	}
+	hc, ok := hosts[host]
+	if !ok || hc.TokenExpiresAt == 0 {
+		return currentToken
+	}
+
+	// Skip refresh if the token was provided via env var (doesn't match stored token)
+	if currentToken != hc.Token {
+		return currentToken
+	}
+
+	// Refresh if token expires within 5 minutes
+	if time.Now().Unix() < hc.TokenExpiresAt-300 {
+		return currentToken
+	}
+
+	newToken, err := auth.RefreshOAuthToken(host)
+	if err != nil {
+		return currentToken
+	}
+	return newToken
 }

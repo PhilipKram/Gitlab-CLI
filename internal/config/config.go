@@ -26,14 +26,17 @@ type Config struct {
 
 // HostConfig stores per-host authentication and settings.
 type HostConfig struct {
-	Token       string `json:"token"`
-	User        string `json:"user,omitempty"`
-	Protocol    string `json:"protocol,omitempty"`
-	APIHost     string `json:"api_host,omitempty"`
-	AuthMethod  string `json:"auth_method,omitempty"` // "pat" or "oauth"
-	ClientID    string `json:"client_id,omitempty"`
-	RedirectURI string `json:"redirect_uri,omitempty"`
-	OAuthScopes string `json:"oauth_scopes,omitempty"`
+	Token          string `json:"token"`
+	RefreshToken   string `json:"refresh_token,omitempty"`
+	TokenExpiresAt int64  `json:"token_expires_at,omitempty"`
+	TokenCreatedAt int64  `json:"token_created_at,omitempty"`
+	User           string `json:"user,omitempty"`
+	Protocol       string `json:"protocol,omitempty"`
+	APIHost        string `json:"api_host,omitempty"`
+	AuthMethod     string `json:"auth_method,omitempty"` // "pat" or "oauth"
+	ClientID       string `json:"client_id,omitempty"`
+	RedirectURI    string `json:"redirect_uri,omitempty"`
+	OAuthScopes    string `json:"oauth_scopes,omitempty"`
 }
 
 // HostKeys returns valid per-host config keys.
