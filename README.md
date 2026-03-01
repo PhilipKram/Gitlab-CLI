@@ -129,6 +129,27 @@ glab config set oauth_scopes "api read_user write_repository" --host gitlab.exam
 
 These values are also automatically saved during your first interactive `glab auth login`.
 
+### Token auto-refresh
+
+OAuth tokens expire after ~2 hours. `glab` automatically detects when a token is
+expired (or about to expire within 5 minutes) and refreshes it in the background
+using the stored refresh token — no manual re-authentication needed.
+
+Run `glab auth status` to see when your token expires:
+
+```
+$ glab auth status
+gitlab.com
+  ✓ Logged in to gitlab.com as username
+  ✓ Token: gho_****
+  ✓ Auth method: oauth
+  ✓ Token expires: 2026-03-01 14:30:00 (in 1h45m)
+```
+
+If a token has already expired, `glab auth status` will note that it will
+auto-refresh on the next API call. Tokens provided via environment variables
+(`GITLAB_TOKEN` / `GLAB_TOKEN`) are never auto-refreshed.
+
 ## Global Flags
 
 | Flag | Description |
