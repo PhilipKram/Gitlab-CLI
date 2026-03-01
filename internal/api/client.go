@@ -19,14 +19,17 @@ type Client struct {
 // NewClient creates a new authenticated GitLab API client.
 // It automatically selects the correct client type based on the stored auth method.
 func NewClient(host string) (*Client, error) {
-	token, _ := config.TokenForHost(host)
+	token, tokenSource := config.TokenForHost(host)
 	if token == "" {
 		return nil, fmt.Errorf("not authenticated with %s; run 'glab auth login --hostname %s'", host, host)
 	}
 
 	authMethod := config.AuthMethodForHost(host)
+	// Only auto-refresh tokens from hosts.json, not env-provided tokens
 	if authMethod == "oauth" {
-		token = RefreshOAuthTokenIfNeeded(host, token)
+		if tokenSource != "GITLAB_TOKEN" && tokenSource != "GLAB_TOKEN" {
+			token = RefreshOAuthTokenIfNeeded(host, token)
+		}
 		return NewOAuthClient(host, token)
 	}
 
