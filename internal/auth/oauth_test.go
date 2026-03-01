@@ -93,7 +93,7 @@ func TestRefreshOAuthToken_Success(t *testing.T) {
 			CreatedAt:    now,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 	interceptTransport(t, testHost, srv)
@@ -250,7 +250,7 @@ func TestRefreshOAuthToken_PreservesExistingConfig(t *testing.T) {
 			CreatedAt:    now,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 	interceptTransport(t, testHost, srv)
