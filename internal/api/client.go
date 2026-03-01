@@ -26,7 +26,7 @@ func NewClient(host string) (*Client, error) {
 
 	authMethod := config.AuthMethodForHost(host)
 	if authMethod == "oauth" {
-		token = refreshOAuthTokenIfNeeded(host, token)
+		token = RefreshOAuthTokenIfNeeded(host, token)
 		return NewOAuthClient(host, token)
 	}
 
@@ -95,9 +95,9 @@ func WebURL(host, path string) string {
 	return fmt.Sprintf("https://%s/%s", host, path)
 }
 
-// refreshOAuthTokenIfNeeded checks if the OAuth token is expired (or about to expire)
+// RefreshOAuthTokenIfNeeded checks if the OAuth token is expired (or about to expire)
 // and refreshes it. Returns the refreshed token on success, or the original token on failure.
-func refreshOAuthTokenIfNeeded(host, currentToken string) string {
+func RefreshOAuthTokenIfNeeded(host, currentToken string) string {
 	hosts, err := config.LoadHosts()
 	if err != nil {
 		return currentToken

@@ -54,7 +54,7 @@ func TestRefreshOAuthTokenIfNeeded_NotExpired(t *testing.T) {
 	})
 	t.Cleanup(func() { clearTestHosts(t) })
 
-	result := refreshOAuthTokenIfNeeded("gitlab.test.local", "current-token")
+	result := RefreshOAuthTokenIfNeeded("gitlab.test.local", "current-token")
 	if result != "current-token" {
 		t.Errorf("expected current token when not expired, got %q", result)
 	}
@@ -69,7 +69,7 @@ func TestRefreshOAuthTokenIfNeeded_NoExpirySet(t *testing.T) {
 	})
 	t.Cleanup(func() { clearTestHosts(t) })
 
-	result := refreshOAuthTokenIfNeeded("gitlab.test.local", "current-token")
+	result := RefreshOAuthTokenIfNeeded("gitlab.test.local", "current-token")
 	if result != "current-token" {
 		t.Errorf("expected current token when no expiry set, got %q", result)
 	}
@@ -79,7 +79,7 @@ func TestRefreshOAuthTokenIfNeeded_HostNotFound(t *testing.T) {
 	writeTestHosts(t, config.HostsConfig{})
 	t.Cleanup(func() { clearTestHosts(t) })
 
-	result := refreshOAuthTokenIfNeeded("nonexistent.host", "current-token")
+	result := RefreshOAuthTokenIfNeeded("nonexistent.host", "current-token")
 	if result != "current-token" {
 		t.Errorf("expected current token when host not found, got %q", result)
 	}
@@ -103,7 +103,7 @@ func TestRefreshOAuthTokenIfNeeded_ExpiredFallsBack(t *testing.T) {
 
 	// No mock server, so the HTTP call will fail.
 	// The function should fall back to the current token.
-	result := refreshOAuthTokenIfNeeded("gitlab.test.local", "current-token")
+	result := RefreshOAuthTokenIfNeeded("gitlab.test.local", "current-token")
 	if result != "current-token" {
 		t.Errorf("expected fallback to current token on refresh failure, got %q", result)
 	}
@@ -127,7 +127,7 @@ func TestRefreshOAuthTokenIfNeeded_ExpiresWithin5Minutes(t *testing.T) {
 	t.Cleanup(func() { clearTestHosts(t) })
 
 	// No mock server — refresh will fail, should fall back to current token.
-	result := refreshOAuthTokenIfNeeded("gitlab.test.local", "current-token")
+	result := RefreshOAuthTokenIfNeeded("gitlab.test.local", "current-token")
 	if result != "current-token" {
 		t.Errorf("expected fallback to current token, got %q", result)
 	}
@@ -149,7 +149,7 @@ func TestRefreshOAuthTokenIfNeeded_NotExpiredWithin5MinBuffer(t *testing.T) {
 	})
 	t.Cleanup(func() { clearTestHosts(t) })
 
-	result := refreshOAuthTokenIfNeeded("gitlab.test.local", "current-token")
+	result := RefreshOAuthTokenIfNeeded("gitlab.test.local", "current-token")
 	if result != "current-token" {
 		t.Errorf("expected current token when expiry is >5min away, got %q", result)
 	}
@@ -159,7 +159,7 @@ func TestRefreshOAuthTokenIfNeeded_NoHostsFile(t *testing.T) {
 	// Remove hosts.json entirely
 	clearTestHosts(t)
 
-	result := refreshOAuthTokenIfNeeded("gitlab.test.local", "current-token")
+	result := RefreshOAuthTokenIfNeeded("gitlab.test.local", "current-token")
 	if result != "current-token" {
 		t.Errorf("expected current token when no hosts file, got %q", result)
 	}

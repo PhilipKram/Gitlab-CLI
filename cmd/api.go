@@ -92,6 +92,9 @@ Or it can be a full URL starting with "http".`,
 			}
 
 			authMethod := config.AuthMethodForHost(host)
+			if authMethod == "oauth" {
+				token = api.RefreshOAuthTokenIfNeeded(host, token)
+			}
 
 			// Build the full URL
 			var url string
