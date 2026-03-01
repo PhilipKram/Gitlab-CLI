@@ -107,6 +107,11 @@ func RefreshOAuthTokenIfNeeded(host, currentToken string) string {
 		return currentToken
 	}
 
+	// Skip refresh if the token was provided via env var (doesn't match stored token)
+	if currentToken != hc.Token {
+		return currentToken
+	}
+
 	// Refresh if token expires within 5 minutes
 	if time.Now().Unix() < hc.TokenExpiresAt-300 {
 		return currentToken

@@ -86,13 +86,14 @@ Or it can be a full URL starting with "http".`,
 				}
 			}
 
-			token, _ := config.TokenForHost(host)
+			token, tokenSource := config.TokenForHost(host)
 			if token == "" {
 				return fmt.Errorf("not authenticated with %s; run 'glab auth login --hostname %s'", host, host)
 			}
 
 			authMethod := config.AuthMethodForHost(host)
-			if authMethod == "oauth" {
+			// Only auto-refresh tokens from hosts.json, not env-provided tokens
+			if authMethod == "oauth" && tokenSource != "GITLAB_TOKEN" && tokenSource != "GLAB_TOKEN" {
 				token = api.RefreshOAuthTokenIfNeeded(host, token)
 			}
 

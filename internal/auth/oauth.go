@@ -134,9 +134,17 @@ func OAuthFlow(host, clientID, redirectURI, scopes string, out io.Writer, openBr
 		hosts[host] = hc
 	}
 	hc.Token = tokenResp.AccessToken
-	hc.RefreshToken = tokenResp.RefreshToken
-	hc.TokenCreatedAt = tokenResp.CreatedAt
-	hc.TokenExpiresAt = tokenResp.CreatedAt + int64(tokenResp.ExpiresIn)
+	if tokenResp.RefreshToken != "" {
+		hc.RefreshToken = tokenResp.RefreshToken
+	}
+	createdAt := tokenResp.CreatedAt
+	if createdAt == 0 {
+		createdAt = time.Now().Unix()
+	}
+	hc.TokenCreatedAt = createdAt
+	if tokenResp.ExpiresIn > 0 {
+		hc.TokenExpiresAt = createdAt + int64(tokenResp.ExpiresIn)
+	}
 	hc.User = user.Username
 	hc.AuthMethod = "oauth"
 
@@ -301,7 +309,8 @@ func RefreshOAuthToken(host string) (string, error) {
 		"redirect_uri":  {hc.RedirectURI},
 	}
 
-	resp, err := http.PostForm(tokenURL, data)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.PostForm(tokenURL, data)
 	if err != nil {
 		return "", fmt.Errorf("requesting token refresh: %w", err)
 	}
@@ -322,9 +331,17 @@ func RefreshOAuthToken(host string) (string, error) {
 	}
 
 	hc.Token = tokenResp.AccessToken
-	hc.RefreshToken = tokenResp.RefreshToken
-	hc.TokenCreatedAt = tokenResp.CreatedAt
-	hc.TokenExpiresAt = tokenResp.CreatedAt + int64(tokenResp.ExpiresIn)
+	if tokenResp.RefreshToken != "" {
+		hc.RefreshToken = tokenResp.RefreshToken
+	}
+	createdAt := tokenResp.CreatedAt
+	if createdAt == 0 {
+		createdAt = time.Now().Unix()
+	}
+	hc.TokenCreatedAt = createdAt
+	if tokenResp.ExpiresIn > 0 {
+		hc.TokenExpiresAt = createdAt + int64(tokenResp.ExpiresIn)
+	}
 
 	if err := config.SaveHosts(hosts); err != nil {
 		return "", fmt.Errorf("saving refreshed credentials: %w", err)
