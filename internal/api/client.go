@@ -2,7 +2,9 @@ package api
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/PhilipKram/gitlab-cli/internal/auth"
 	"github.com/PhilipKram/gitlab-cli/internal/config"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 	"golang.org/x/oauth2"
@@ -24,6 +26,7 @@ func NewClient(host string) (*Client, error) {
 
 	authMethod := config.AuthMethodForHost(host)
 	if authMethod == "oauth" {
+		token = refreshOAuthTokenIfNeeded(host, token)
 		return NewOAuthClient(host, token)
 	}
 
@@ -90,4 +93,28 @@ func APIURL(host string) string {
 // WebURL returns the web URL for a given host and path.
 func WebURL(host, path string) string {
 	return fmt.Sprintf("https://%s/%s", host, path)
+}
+
+// refreshOAuthTokenIfNeeded checks if the OAuth token is expired (or about to expire)
+// and refreshes it. Returns the refreshed token on success, or the original token on failure.
+func refreshOAuthTokenIfNeeded(host, currentToken string) string {
+	hosts, err := config.LoadHosts()
+	if err != nil {
+		return currentToken
+	}
+	hc, ok := hosts[host]
+	if !ok || hc.TokenExpiresAt == 0 {
+		return currentToken
+	}
+
+	// Refresh if token expires within 5 minutes
+	if time.Now().Unix() < hc.TokenExpiresAt-300 {
+		return currentToken
+	}
+
+	newToken, err := auth.RefreshOAuthToken(host)
+	if err != nil {
+		return currentToken
+	}
+	return newToken
 }

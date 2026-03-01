@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/PhilipKram/gitlab-cli/internal/auth"
 	"github.com/PhilipKram/gitlab-cli/internal/browser"
@@ -265,6 +266,14 @@ func newAuthStatusCmd(f *cmdutil.Factory) *cobra.Command {
 				fmt.Fprintf(out, "  - Token: %s\n", s.Token)
 				if s.AuthMethod != "" {
 					fmt.Fprintf(out, "  - Auth method: %s\n", s.AuthMethod)
+				}
+				if s.AuthMethod == "oauth" && s.TokenExpiresAt > 0 {
+					expiresAt := time.Unix(s.TokenExpiresAt, 0)
+					if time.Now().Before(expiresAt) {
+						fmt.Fprintf(out, "  - Token expires: %s (in %s)\n", expiresAt.Format(time.RFC1123), time.Until(expiresAt).Round(time.Minute))
+					} else {
+						fmt.Fprintf(out, "  - Token expired: %s (will auto-refresh on next API call)\n", expiresAt.Format(time.RFC1123))
+					}
 				}
 				if s.HasError {
 					fmt.Fprintf(out, "  X Error: %s\n", s.Error)
