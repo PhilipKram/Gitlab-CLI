@@ -23,6 +23,7 @@ func NewVariableCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.AddCommand(newVariableGetCmd(f))
 	cmd.AddCommand(newVariableSetCmd(f))
 	cmd.AddCommand(newVariableUpdateCmd(f))
+	cmd.AddCommand(newVariableDeleteCmd(f))
 
 	return cmd
 }
@@ -472,6 +473,55 @@ func newVariableUpdateCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Read variable value from file")
 	cmd.Flags().StringVarP(&group, "group", "g", "", "Update group-level variable (specify group path)")
 	cmd.Flags().StringVar(&varType, "type", "env_var", "Variable type: env_var or file")
+
+	return cmd
+}
+
+func newVariableDeleteCmd(f *cmdutil.Factory) *cobra.Command {
+	var group string
+
+	cmd := &cobra.Command{
+		Use:   "delete <key>",
+		Short: "Delete a CI/CD variable",
+		Example: `  $ glab variable delete MY_VAR
+  $ glab variable delete MY_VAR --group mygroup`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			key := args[0]
+
+			if group != "" {
+				// Delete group-level variable
+				_, err = client.GroupVariables.RemoveVariable(group, key, nil)
+				if err != nil {
+					return fmt.Errorf("deleting group variable: %w", err)
+				}
+
+				fmt.Fprintf(f.IOStreams.Out, "Deleted group variable %q\n", key)
+				return nil
+			}
+
+			// Delete project-level variable
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			_, err = client.ProjectVariables.RemoveVariable(project, key, nil)
+			if err != nil {
+				return fmt.Errorf("deleting project variable: %w", err)
+			}
+
+			fmt.Fprintf(f.IOStreams.Out, "Deleted variable %q\n", key)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&group, "group", "g", "", "Delete group-level variable (specify group path)")
 
 	return cmd
 }
