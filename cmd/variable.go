@@ -25,6 +25,7 @@ func NewVariableCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.AddCommand(newVariableUpdateCmd(f))
 	cmd.AddCommand(newVariableDeleteCmd(f))
 	cmd.AddCommand(newVariableExportCmd(f))
+	cmd.AddCommand(newVariableImportCmd(f))
 
 	return cmd
 }
@@ -594,6 +595,133 @@ func newVariableExportCmd(f *cmdutil.Factory) *cobra.Command {
 
 	cmd.Flags().StringVarP(&group, "group", "g", "", "Export group-level variables (specify group path)")
 	cmd.Flags().StringVarP(&output, "output", "o", "", "Output file path (default: stdout)")
+
+	return cmd
+}
+
+func newVariableImportCmd(f *cmdutil.Factory) *cobra.Command {
+	var (
+		group string
+		file  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "import",
+		Short: "Import CI/CD variables from JSON",
+		Example: `  $ glab variable import --file variables.json
+  $ glab variable import --file group-vars.json --group mygroup`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			if file == "" {
+				return fmt.Errorf("--file flag is required")
+			}
+
+			// Read the JSON file
+			data, err := os.ReadFile(file)
+			if err != nil {
+				return fmt.Errorf("reading file: %w", err)
+			}
+
+			if group != "" {
+				// Import group-level variables
+				var variables []*gitlab.GroupVariable
+				err = json.Unmarshal(data, &variables)
+				if err != nil {
+					return fmt.Errorf("parsing JSON: %w", err)
+				}
+
+				imported := 0
+				for _, v := range variables {
+					// Try to update first, if it fails, create it
+					updateOpts := &gitlab.UpdateGroupVariableOptions{
+						Value:            &v.Value,
+						Protected:        &v.Protected,
+						Masked:           &v.Masked,
+						EnvironmentScope: &v.EnvironmentScope,
+						VariableType:     &v.VariableType,
+					}
+
+					_, _, err := client.GroupVariables.UpdateVariable(group, v.Key, updateOpts)
+					if err != nil {
+						// Variable doesn't exist, create it
+						createOpts := &gitlab.CreateGroupVariableOptions{
+							Key:              &v.Key,
+							Value:            &v.Value,
+							Protected:        &v.Protected,
+							Masked:           &v.Masked,
+							EnvironmentScope: &v.EnvironmentScope,
+							VariableType:     &v.VariableType,
+						}
+
+						_, _, err = client.GroupVariables.CreateVariable(group, createOpts)
+						if err != nil {
+							fmt.Fprintf(f.IOStreams.ErrOut, "Warning: failed to import variable %q: %v\n", v.Key, err)
+							continue
+						}
+					}
+					imported++
+				}
+
+				fmt.Fprintf(f.IOStreams.Out, "Imported %d group variable(s)\n", imported)
+				return nil
+			}
+
+			// Import project-level variables
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			var variables []*gitlab.ProjectVariable
+			err = json.Unmarshal(data, &variables)
+			if err != nil {
+				return fmt.Errorf("parsing JSON: %w", err)
+			}
+
+			imported := 0
+			for _, v := range variables {
+				// Try to update first, if it fails, create it
+				updateOpts := &gitlab.UpdateProjectVariableOptions{
+					Value:            &v.Value,
+					Protected:        &v.Protected,
+					Masked:           &v.Masked,
+					EnvironmentScope: &v.EnvironmentScope,
+					VariableType:     &v.VariableType,
+				}
+
+				_, _, err := client.ProjectVariables.UpdateVariable(project, v.Key, updateOpts)
+				if err != nil {
+					// Variable doesn't exist, create it
+					createOpts := &gitlab.CreateProjectVariableOptions{
+						Key:              &v.Key,
+						Value:            &v.Value,
+						Protected:        &v.Protected,
+						Masked:           &v.Masked,
+						EnvironmentScope: &v.EnvironmentScope,
+						VariableType:     &v.VariableType,
+					}
+
+					_, _, err = client.ProjectVariables.CreateVariable(project, createOpts)
+					if err != nil {
+						fmt.Fprintf(f.IOStreams.ErrOut, "Warning: failed to import variable %q: %v\n", v.Key, err)
+						continue
+					}
+				}
+				imported++
+			}
+
+			fmt.Fprintf(f.IOStreams.Out, "Imported %d variable(s)\n", imported)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&group, "group", "g", "", "Import group-level variables (specify group path)")
+	cmd.Flags().StringVarP(&file, "file", "f", "", "Input JSON file path (required)")
+	_ = cmd.MarkFlagRequired("file")
 
 	return cmd
 }
