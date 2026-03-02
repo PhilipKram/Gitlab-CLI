@@ -554,6 +554,8 @@ func followJobLog(f *cmdutil.Factory, client *api.Client, project string, jobID 
 }
 
 func newPipelineRetryJobCmd(f *cmdutil.Factory) *cobra.Command {
+	var jsonFlag bool
+
 	cmd := &cobra.Command{
 		Use:   "retry-job [<job-id>]",
 		Short: "Retry a specific failed job",
@@ -583,15 +585,28 @@ func newPipelineRetryJobCmd(f *cmdutil.Factory) *cobra.Command {
 				return fmt.Errorf("retrying job: %w", err)
 			}
 
+			if jsonFlag {
+				data, err := json.MarshalIndent(job, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(f.IOStreams.Out, string(data))
+				return nil
+			}
+
 			fmt.Fprintf(f.IOStreams.Out, "Retried job #%d (status: %s)\n", job.ID, job.Status)
 			return nil
 		},
 	}
 
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
+
 	return cmd
 }
 
 func newPipelineCancelJobCmd(f *cmdutil.Factory) *cobra.Command {
+	var jsonFlag bool
+
 	cmd := &cobra.Command{
 		Use:   "cancel-job [<job-id>]",
 		Short: "Cancel a specific running job",
@@ -621,10 +636,21 @@ func newPipelineCancelJobCmd(f *cmdutil.Factory) *cobra.Command {
 				return fmt.Errorf("canceling job: %w", err)
 			}
 
+			if jsonFlag {
+				data, err := json.MarshalIndent(job, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(f.IOStreams.Out, string(data))
+				return nil
+			}
+
 			fmt.Fprintf(f.IOStreams.Out, "Canceled job #%d (status: %s)\n", job.ID, job.Status)
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
 
 	return cmd
 }
