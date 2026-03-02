@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PhilipKram/gitlab-cli/internal/api"
 	"github.com/PhilipKram/gitlab-cli/internal/browser"
 	"github.com/PhilipKram/gitlab-cli/internal/cmdutil"
 	"github.com/PhilipKram/gitlab-cli/internal/tableprinter"
@@ -442,11 +443,14 @@ func newPipelineJobsCmd(f *cmdutil.Factory) *cobra.Command {
 }
 
 func newPipelineJobLogCmd(f *cmdutil.Factory) *cobra.Command {
+	var follow bool
+
 	cmd := &cobra.Command{
 		Use:     "job-log [<job-id>]",
 		Short:   "View the log/trace of a job",
 		Aliases: []string{"trace"},
-		Example: `  $ glab pipeline job-log 67890`,
+		Example: `  $ glab pipeline job-log 67890
+  $ glab pipeline job-log 67890 --follow`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := f.Client()
 			if err != nil {
@@ -465,6 +469,10 @@ func newPipelineJobLogCmd(f *cmdutil.Factory) *cobra.Command {
 			jobID, err := strconv.ParseInt(args[0], 10, 64)
 			if err != nil {
 				return fmt.Errorf("invalid job ID: %s", args[0])
+			}
+
+			if follow {
+				return followJobLog(f, client, project, int(jobID))
 			}
 
 			reader, _, err := client.Jobs.GetTraceFile(project, jobID)
@@ -487,7 +495,60 @@ func newPipelineJobLogCmd(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Stream job log in real-time")
+
 	return cmd
+}
+
+func followJobLog(f *cmdutil.Factory, client *api.Client, project string, jobID int) error {
+	var lastBytePos int64
+	jobIDInt64 := int64(jobID)
+
+	for {
+		// Get job status to check if still running
+		job, _, err := client.Jobs.GetJob(project, jobIDInt64)
+		if err != nil {
+			return fmt.Errorf("getting job status: %w", err)
+		}
+
+		// Fetch trace from last position
+		reader, _, err := client.Jobs.GetTraceFile(project, jobIDInt64)
+		if err != nil {
+			return fmt.Errorf("getting job trace: %w", err)
+		}
+
+		// Skip to last position
+		if lastBytePos > 0 {
+			buf := make([]byte, lastBytePos)
+			_, _ = reader.Read(buf)
+		}
+
+		// Read and print new content
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := reader.Read(buf)
+			if n > 0 {
+				fmt.Fprint(f.IOStreams.Out, string(buf[:n]))
+				lastBytePos += int64(n)
+			}
+			if readErr != nil {
+				break
+			}
+		}
+
+		// Check if job is finished
+		jobFinished := job.Status == "success" || job.Status == "failed" ||
+			job.Status == "canceled" || job.Status == "skipped"
+
+		if jobFinished {
+			break
+		}
+
+		// Wait before next poll
+		time.Sleep(2 * time.Second)
+	}
+
+	return nil
 }
 
 func parsePipelineArg(args []string) (int64, error) {
