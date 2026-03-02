@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -660,12 +662,14 @@ func newPipelineCancelJobCmd(f *cmdutil.Factory) *cobra.Command {
 
 func newPipelineArtifactsCmd(f *cmdutil.Factory) *cobra.Command {
 	var outputPath string
+	var filePath string
 
 	cmd := &cobra.Command{
 		Use:   "artifacts [<job-id>]",
 		Short: "Download job artifacts as a zip file",
 		Example: `  $ glab pipeline artifacts 67890
-  $ glab pipeline artifacts 67890 --output my-artifacts.zip`,
+  $ glab pipeline artifacts 67890 --output my-artifacts.zip
+  $ glab pipeline artifacts 67890 --path path/to/file.txt`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := f.Client()
 			if err != nil {
@@ -686,14 +690,19 @@ func newPipelineArtifactsCmd(f *cmdutil.Factory) *cobra.Command {
 				return fmt.Errorf("invalid job ID: %s", args[0])
 			}
 
-			// Use default output path if not specified
-			if outputPath == "" {
-				outputPath = "artifacts.zip"
-			}
-
 			reader, _, err := client.Jobs.GetJobArtifacts(project, jobID)
 			if err != nil {
 				return fmt.Errorf("downloading job artifacts: %w", err)
+			}
+
+			// If --path is specified, extract only that file
+			if filePath != "" {
+				return extractFileFromArtifacts(f, reader, filePath, outputPath)
+			}
+
+			// Use default output path if not specified
+			if outputPath == "" {
+				outputPath = "artifacts.zip"
 			}
 
 			// Create output file
@@ -715,8 +724,76 @@ func newPipelineArtifactsCmd(f *cmdutil.Factory) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path (default: artifacts.zip)")
+	cmd.Flags().StringVar(&filePath, "path", "", "Extract a specific file from artifacts")
 
 	return cmd
+}
+
+func extractFileFromArtifacts(f *cmdutil.Factory, reader io.Reader, filePath string, outputPath string) error {
+	// Create a temporary file to store the zip
+	tmpFile, err := os.CreateTemp("", "glab-artifacts-*.zip")
+	if err != nil {
+		return fmt.Errorf("creating temporary file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	// Copy artifacts to temp file
+	_, err = io.Copy(tmpFile, reader)
+	if err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("writing artifacts to temporary file: %w", err)
+	}
+	tmpFile.Close()
+
+	// Open the zip file
+	zipReader, err := zip.OpenReader(tmpPath)
+	if err != nil {
+		return fmt.Errorf("opening zip file: %w", err)
+	}
+	defer zipReader.Close()
+
+	// Find and extract the specified file
+	var found bool
+	for _, zipFile := range zipReader.File {
+		if zipFile.Name == filePath {
+			found = true
+
+			// Determine output path
+			if outputPath == "" {
+				outputPath = filepath.Base(filePath)
+			}
+
+			// Open the file in the zip
+			rc, err := zipFile.Open()
+			if err != nil {
+				return fmt.Errorf("opening file in zip: %w", err)
+			}
+			defer rc.Close()
+
+			// Create output file
+			outFile, err := os.Create(outputPath)
+			if err != nil {
+				return fmt.Errorf("creating output file: %w", err)
+			}
+			defer outFile.Close()
+
+			// Copy the file
+			written, err := io.Copy(outFile, rc)
+			if err != nil {
+				return fmt.Errorf("extracting file: %w", err)
+			}
+
+			fmt.Fprintf(f.IOStreams.Out, "Extracted %s to %s (%d bytes)\n", filePath, outputPath, written)
+			return nil
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("file %s not found in artifacts", filePath)
+	}
+
+	return nil
 }
 
 func parsePipelineArg(args []string) (int64, error) {
