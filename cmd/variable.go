@@ -24,6 +24,7 @@ func NewVariableCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.AddCommand(newVariableSetCmd(f))
 	cmd.AddCommand(newVariableUpdateCmd(f))
 	cmd.AddCommand(newVariableDeleteCmd(f))
+	cmd.AddCommand(newVariableExportCmd(f))
 
 	return cmd
 }
@@ -522,6 +523,77 @@ func newVariableDeleteCmd(f *cmdutil.Factory) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&group, "group", "g", "", "Delete group-level variable (specify group path)")
+
+	return cmd
+}
+
+func newVariableExportCmd(f *cmdutil.Factory) *cobra.Command {
+	var (
+		group  string
+		output string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "export",
+		Short: "Export CI/CD variables to JSON",
+		Example: `  $ glab variable export
+  $ glab variable export --group mygroup
+  $ glab variable export --output variables.json
+  $ glab variable export --group mygroup --output group-vars.json`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			var data []byte
+
+			if group != "" {
+				// Export group-level variables
+				groupVariables, _, err := client.GroupVariables.ListVariables(group, nil)
+				if err != nil {
+					return fmt.Errorf("listing group variables: %w", err)
+				}
+
+				data, err = json.MarshalIndent(groupVariables, "", "  ")
+				if err != nil {
+					return fmt.Errorf("marshaling variables: %w", err)
+				}
+			} else {
+				// Export project-level variables
+				project, err := f.FullProjectPath()
+				if err != nil {
+					return err
+				}
+
+				variables, _, err := client.ProjectVariables.ListVariables(project, nil)
+				if err != nil {
+					return fmt.Errorf("listing project variables: %w", err)
+				}
+
+				data, err = json.MarshalIndent(variables, "", "  ")
+				if err != nil {
+					return fmt.Errorf("marshaling variables: %w", err)
+				}
+			}
+
+			// Write to file or stdout
+			if output != "" {
+				err := os.WriteFile(output, data, 0600)
+				if err != nil {
+					return fmt.Errorf("writing to file: %w", err)
+				}
+				fmt.Fprintf(f.IOStreams.Out, "Exported variables to %s\n", output)
+			} else {
+				fmt.Fprintln(f.IOStreams.Out, string(data))
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&group, "group", "g", "", "Export group-level variables (specify group path)")
+	cmd.Flags().StringVarP(&output, "output", "o", "", "Output file path (default: stdout)")
 
 	return cmd
 }
