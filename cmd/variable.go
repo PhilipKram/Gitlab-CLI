@@ -22,6 +22,7 @@ func NewVariableCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.AddCommand(newVariableListCmd(f))
 	cmd.AddCommand(newVariableGetCmd(f))
 	cmd.AddCommand(newVariableSetCmd(f))
+	cmd.AddCommand(newVariableUpdateCmd(f))
 
 	return cmd
 }
@@ -364,6 +365,112 @@ func newVariableSetCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().StringVar(&scope, "scope", "*", "Environment scope (default: *)")
 	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Read variable value from file")
 	cmd.Flags().StringVarP(&group, "group", "g", "", "Set group-level variable (specify group path)")
+	cmd.Flags().StringVar(&varType, "type", "env_var", "Variable type: env_var or file")
+
+	return cmd
+}
+
+func newVariableUpdateCmd(f *cmdutil.Factory) *cobra.Command {
+	var (
+		value      string
+		masked     bool
+		protected  bool
+		scope      string
+		filePath   string
+		group      string
+		varType    string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <key>",
+		Short: "Update an existing CI/CD variable",
+		Example: `  $ glab variable update MY_VAR --value "new-value"
+  $ glab variable update MY_VAR --masked --protected
+  $ glab variable update MY_VAR --file ./config.json --scope production
+  $ glab variable update MY_VAR --value "updated-secret" --group mygroup`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			key := args[0]
+
+			// Get value from file or flag
+			varValue := value
+			if filePath != "" {
+				data, err := os.ReadFile(filePath)
+				if err != nil {
+					return fmt.Errorf("reading file: %w", err)
+				}
+				varValue = string(data)
+			}
+
+			if varValue == "" {
+				return fmt.Errorf("either --value or --file flag is required")
+			}
+
+			// Default scope
+			if scope == "" {
+				scope = "*"
+			}
+
+			// Default variable type
+			variableType := gitlab.EnvVariableType
+			if varType == "file" {
+				variableType = gitlab.FileVariableType
+			}
+
+			if group != "" {
+				// Update group-level variable
+				updateOpts := &gitlab.UpdateGroupVariableOptions{
+					Value:            &varValue,
+					Protected:        &protected,
+					Masked:           &masked,
+					EnvironmentScope: &scope,
+					VariableType:     &variableType,
+				}
+
+				variable, _, err := client.GroupVariables.UpdateVariable(group, key, updateOpts)
+				if err != nil {
+					return fmt.Errorf("updating group variable: %w", err)
+				}
+
+				fmt.Fprintf(f.IOStreams.Out, "Updated group variable %q\n", variable.Key)
+				return nil
+			}
+
+			// Update project-level variable
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			updateOpts := &gitlab.UpdateProjectVariableOptions{
+				Value:            &varValue,
+				Protected:        &protected,
+				Masked:           &masked,
+				EnvironmentScope: &scope,
+				VariableType:     &variableType,
+			}
+
+			variable, _, err := client.ProjectVariables.UpdateVariable(project, key, updateOpts)
+			if err != nil {
+				return fmt.Errorf("updating project variable: %w", err)
+			}
+
+			fmt.Fprintf(f.IOStreams.Out, "Updated variable %q\n", variable.Key)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&value, "value", "v", "", "Variable value")
+	cmd.Flags().BoolVar(&masked, "masked", false, "Mask variable value in logs")
+	cmd.Flags().BoolVar(&protected, "protected", false, "Protect variable (only available in protected branches/tags)")
+	cmd.Flags().StringVar(&scope, "scope", "*", "Environment scope (default: *)")
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Read variable value from file")
+	cmd.Flags().StringVarP(&group, "group", "g", "", "Update group-level variable (specify group path)")
 	cmd.Flags().StringVar(&varType, "type", "env_var", "Variable type: env_var or file")
 
 	return cmd
