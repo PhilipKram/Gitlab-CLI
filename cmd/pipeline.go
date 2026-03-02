@@ -32,6 +32,7 @@ func NewPipelineCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.AddCommand(newPipelineDeleteCmd(f))
 	cmd.AddCommand(newPipelineJobsCmd(f))
 	cmd.AddCommand(newPipelineJobLogCmd(f))
+	cmd.AddCommand(newPipelineRetryJobCmd(f))
 
 	return cmd
 }
@@ -549,6 +550,44 @@ func followJobLog(f *cmdutil.Factory, client *api.Client, project string, jobID 
 	}
 
 	return nil
+}
+
+func newPipelineRetryJobCmd(f *cmdutil.Factory) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "retry-job [<job-id>]",
+		Short: "Retry a specific failed job",
+		Example: `  $ glab pipeline retry-job 67890`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			if len(args) == 0 {
+				return fmt.Errorf("job ID required")
+			}
+
+			jobID, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid job ID: %s", args[0])
+			}
+
+			job, _, err := client.Jobs.RetryJob(project, jobID)
+			if err != nil {
+				return fmt.Errorf("retrying job: %w", err)
+			}
+
+			fmt.Fprintf(f.IOStreams.Out, "Retried job #%d (status: %s)\n", job.ID, job.Status)
+			return nil
+		},
+	}
+
+	return cmd
 }
 
 func parsePipelineArg(args []string) (int64, error) {
