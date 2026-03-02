@@ -12,3 +12,6 @@ dist/
 *.swp
 *.swo
 *~
+
+# Auto Claude data directory
+.auto-claude/

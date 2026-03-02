@@ -1,12 +1,17 @@
 package cmd
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/PhilipKram/gitlab-cli/internal/api"
 	"github.com/PhilipKram/gitlab-cli/internal/browser"
 	"github.com/PhilipKram/gitlab-cli/internal/cmdutil"
 	"github.com/PhilipKram/gitlab-cli/internal/tableprinter"
@@ -31,6 +36,9 @@ func NewPipelineCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.AddCommand(newPipelineDeleteCmd(f))
 	cmd.AddCommand(newPipelineJobsCmd(f))
 	cmd.AddCommand(newPipelineJobLogCmd(f))
+	cmd.AddCommand(newPipelineRetryJobCmd(f))
+	cmd.AddCommand(newPipelineCancelJobCmd(f))
+	cmd.AddCommand(newPipelineArtifactsCmd(f))
 
 	return cmd
 }
@@ -442,11 +450,14 @@ func newPipelineJobsCmd(f *cmdutil.Factory) *cobra.Command {
 }
 
 func newPipelineJobLogCmd(f *cmdutil.Factory) *cobra.Command {
+	var follow bool
+
 	cmd := &cobra.Command{
 		Use:     "job-log [<job-id>]",
 		Short:   "View the log/trace of a job",
 		Aliases: []string{"trace"},
-		Example: `  $ glab pipeline job-log 67890`,
+		Example: `  $ glab pipeline job-log 67890
+  $ glab pipeline job-log 67890 --follow`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := f.Client()
 			if err != nil {
@@ -465,6 +476,10 @@ func newPipelineJobLogCmd(f *cmdutil.Factory) *cobra.Command {
 			jobID, err := strconv.ParseInt(args[0], 10, 64)
 			if err != nil {
 				return fmt.Errorf("invalid job ID: %s", args[0])
+			}
+
+			if follow {
+				return followJobLog(f, client, project, int(jobID))
 			}
 
 			reader, _, err := client.Jobs.GetTraceFile(project, jobID)
@@ -487,7 +502,298 @@ func newPipelineJobLogCmd(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Stream job log in real-time")
+
 	return cmd
+}
+
+func followJobLog(f *cmdutil.Factory, client *api.Client, project string, jobID int) error {
+	var lastBytePos int64
+	jobIDInt64 := int64(jobID)
+
+	for {
+		// Get job status to check if still running
+		job, _, err := client.Jobs.GetJob(project, jobIDInt64)
+		if err != nil {
+			return fmt.Errorf("getting job status: %w", err)
+		}
+
+		// Fetch trace from last position
+		reader, _, err := client.Jobs.GetTraceFile(project, jobIDInt64)
+		if err != nil {
+			return fmt.Errorf("getting job trace: %w", err)
+		}
+
+		// Skip to last position
+		if lastBytePos > 0 {
+			buf := make([]byte, lastBytePos)
+			_, _ = reader.Read(buf)
+		}
+
+		// Read and print new content
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := reader.Read(buf)
+			if n > 0 {
+				fmt.Fprint(f.IOStreams.Out, string(buf[:n]))
+				lastBytePos += int64(n)
+			}
+			if readErr != nil {
+				break
+			}
+		}
+
+		// Check if job is finished
+		jobFinished := job.Status == "success" || job.Status == "failed" ||
+			job.Status == "canceled" || job.Status == "skipped"
+
+		if jobFinished {
+			break
+		}
+
+		// Wait before next poll
+		time.Sleep(2 * time.Second)
+	}
+
+	return nil
+}
+
+func newPipelineRetryJobCmd(f *cmdutil.Factory) *cobra.Command {
+	var jsonFlag bool
+
+	cmd := &cobra.Command{
+		Use:   "retry-job [<job-id>]",
+		Short: "Retry a specific failed job",
+		Example: `  $ glab pipeline retry-job 67890`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			if len(args) == 0 {
+				return fmt.Errorf("job ID required")
+			}
+
+			jobID, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid job ID: %s", args[0])
+			}
+
+			job, _, err := client.Jobs.RetryJob(project, jobID)
+			if err != nil {
+				return fmt.Errorf("retrying job: %w", err)
+			}
+
+			if jsonFlag {
+				data, err := json.MarshalIndent(job, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(f.IOStreams.Out, string(data))
+				return nil
+			}
+
+			fmt.Fprintf(f.IOStreams.Out, "Retried job #%d (status: %s)\n", job.ID, job.Status)
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
+
+	return cmd
+}
+
+func newPipelineCancelJobCmd(f *cmdutil.Factory) *cobra.Command {
+	var jsonFlag bool
+
+	cmd := &cobra.Command{
+		Use:   "cancel-job [<job-id>]",
+		Short: "Cancel a specific running job",
+		Example: `  $ glab pipeline cancel-job 67890`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			if len(args) == 0 {
+				return fmt.Errorf("job ID required")
+			}
+
+			jobID, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid job ID: %s", args[0])
+			}
+
+			job, _, err := client.Jobs.CancelJob(project, jobID)
+			if err != nil {
+				return fmt.Errorf("canceling job: %w", err)
+			}
+
+			if jsonFlag {
+				data, err := json.MarshalIndent(job, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(f.IOStreams.Out, string(data))
+				return nil
+			}
+
+			fmt.Fprintf(f.IOStreams.Out, "Canceled job #%d (status: %s)\n", job.ID, job.Status)
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
+
+	return cmd
+}
+
+func newPipelineArtifactsCmd(f *cmdutil.Factory) *cobra.Command {
+	var outputPath string
+	var filePath string
+
+	cmd := &cobra.Command{
+		Use:   "artifacts [<job-id>]",
+		Short: "Download job artifacts as a zip file",
+		Example: `  $ glab pipeline artifacts 67890
+  $ glab pipeline artifacts 67890 --output my-artifacts.zip
+  $ glab pipeline artifacts 67890 --path path/to/file.txt`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			if len(args) == 0 {
+				return fmt.Errorf("job ID required")
+			}
+
+			jobID, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid job ID: %s", args[0])
+			}
+
+			reader, _, err := client.Jobs.GetJobArtifacts(project, jobID)
+			if err != nil {
+				return fmt.Errorf("downloading job artifacts: %w", err)
+			}
+
+			// If --path is specified, extract only that file
+			if filePath != "" {
+				return extractFileFromArtifacts(f, reader, filePath, outputPath)
+			}
+
+			// Use default output path if not specified
+			if outputPath == "" {
+				outputPath = "artifacts.zip"
+			}
+
+			// Create output file
+			outFile, err := os.Create(outputPath)
+			if err != nil {
+				return fmt.Errorf("creating output file: %w", err)
+			}
+			defer outFile.Close()
+
+			// Copy artifacts to file
+			written, err := io.Copy(outFile, reader)
+			if err != nil {
+				return fmt.Errorf("writing artifacts to file: %w", err)
+			}
+
+			fmt.Fprintf(f.IOStreams.Out, "Downloaded artifacts to %s (%d bytes)\n", outputPath, written)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path (default: artifacts.zip)")
+	cmd.Flags().StringVar(&filePath, "path", "", "Extract a specific file from artifacts")
+
+	return cmd
+}
+
+func extractFileFromArtifacts(f *cmdutil.Factory, reader io.Reader, filePath string, outputPath string) error {
+	// Create a temporary file to store the zip
+	tmpFile, err := os.CreateTemp("", "glab-artifacts-*.zip")
+	if err != nil {
+		return fmt.Errorf("creating temporary file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	// Copy artifacts to temp file
+	_, err = io.Copy(tmpFile, reader)
+	if err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("writing artifacts to temporary file: %w", err)
+	}
+	tmpFile.Close()
+
+	// Open the zip file
+	zipReader, err := zip.OpenReader(tmpPath)
+	if err != nil {
+		return fmt.Errorf("opening zip file: %w", err)
+	}
+	defer zipReader.Close()
+
+	// Find and extract the specified file
+	var found bool
+	for _, zipFile := range zipReader.File {
+		if zipFile.Name == filePath {
+			found = true
+
+			// Determine output path
+			if outputPath == "" {
+				outputPath = filepath.Base(filePath)
+			}
+
+			// Open the file in the zip
+			rc, err := zipFile.Open()
+			if err != nil {
+				return fmt.Errorf("opening file in zip: %w", err)
+			}
+			defer rc.Close()
+
+			// Create output file
+			outFile, err := os.Create(outputPath)
+			if err != nil {
+				return fmt.Errorf("creating output file: %w", err)
+			}
+			defer outFile.Close()
+
+			// Copy the file
+			written, err := io.Copy(outFile, rc)
+			if err != nil {
+				return fmt.Errorf("extracting file: %w", err)
+			}
+
+			fmt.Fprintf(f.IOStreams.Out, "Extracted %s to %s (%d bytes)\n", filePath, outputPath, written)
+			return nil
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("file %s not found in artifacts", filePath)
+	}
+
+	return nil
 }
 
 func parsePipelineArg(args []string) (int64, error) {
