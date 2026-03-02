@@ -1,0 +1,39 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read(./**)",
+      "Write(./**)",
+      "Edit(./**)",
+      "Glob(./**)",
+      "Grep(./**)",
+      "Read(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/worktrees/tasks/006-enhanced-pipeline-commands/**)",
+      "Write(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/worktrees/tasks/006-enhanced-pipeline-commands/**)",
+      "Edit(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/worktrees/tasks/006-enhanced-pipeline-commands/**)",
+      "Glob(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/worktrees/tasks/006-enhanced-pipeline-commands/**)",
+      "Grep(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/worktrees/tasks/006-enhanced-pipeline-commands/**)",
+      "Read(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/worktrees/tasks/006-enhanced-pipeline-commands/.auto-claude/specs/006-enhanced-pipeline-commands/**)",
+      "Write(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/worktrees/tasks/006-enhanced-pipeline-commands/.auto-claude/specs/006-enhanced-pipeline-commands/**)",
+      "Edit(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/worktrees/tasks/006-enhanced-pipeline-commands/.auto-claude/specs/006-enhanced-pipeline-commands/**)",
+      "Read(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/**)",
+      "Write(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/**)",
+      "Edit(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/**)",
+      "Glob(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/**)",
+      "Grep(/Users/philipkramer/Project/private/Gitlab-CLI/.auto-claude/**)",
+      "Bash(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "mcp__context7__resolve-library-id(*)",
+      "mcp__context7__query-docs(*)",
+      "mcp__graphiti-memory__search_nodes(*)",
+      "mcp__graphiti-memory__search_facts(*)",
+      "mcp__graphiti-memory__add_episode(*)",
+      "mcp__graphiti-memory__get_episodes(*)",
+      "mcp__graphiti-memory__get_entity_edge(*)"
+    ]
+  }
+}
