@@ -33,6 +33,7 @@ func NewPipelineCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.AddCommand(newPipelineJobsCmd(f))
 	cmd.AddCommand(newPipelineJobLogCmd(f))
 	cmd.AddCommand(newPipelineRetryJobCmd(f))
+	cmd.AddCommand(newPipelineCancelJobCmd(f))
 
 	return cmd
 }
@@ -583,6 +584,44 @@ func newPipelineRetryJobCmd(f *cmdutil.Factory) *cobra.Command {
 			}
 
 			fmt.Fprintf(f.IOStreams.Out, "Retried job #%d (status: %s)\n", job.ID, job.Status)
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+func newPipelineCancelJobCmd(f *cmdutil.Factory) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "cancel-job [<job-id>]",
+		Short: "Cancel a specific running job",
+		Example: `  $ glab pipeline cancel-job 67890`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			if len(args) == 0 {
+				return fmt.Errorf("job ID required")
+			}
+
+			jobID, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid job ID: %s", args[0])
+			}
+
+			job, _, err := client.Jobs.CancelJob(project, jobID)
+			if err != nil {
+				return fmt.Errorf("canceling job: %w", err)
+			}
+
+			fmt.Fprintf(f.IOStreams.Out, "Canceled job #%d (status: %s)\n", job.ID, job.Status)
 			return nil
 		},
 	}
