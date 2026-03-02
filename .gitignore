@@ -13,5 +13,14 @@ dist/
 *.swo
 *~
 
+# Build artifacts
+/glab
+
 # Auto Claude data directory
 .auto-claude/
+
+# Auto Claude framework files
+.auto-claude-*
+
+# Claude Code settings
+.claude_settings.json

@@ -52,6 +52,7 @@ func NewRootCmd(version string) *cobra.Command {
 	// CI/CD commands
 	cmd.AddCommand(NewPipelineCmd(f))
 	cmd.AddCommand(NewReleaseCmd(f))
+	cmd.AddCommand(NewVariableCmd(f))
 
 	// Additional commands
 	cmd.AddCommand(NewSnippetCmd(f))
@@ -94,6 +95,7 @@ Core Commands:
 CI/CD Commands:
   pipeline    Manage pipelines and CI/CD
   release     Manage releases
+  variable    Manage CI/CD variables
 
 Additional Commands:
   snippet     Manage snippets
