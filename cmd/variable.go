@@ -19,6 +19,7 @@ func NewVariableCmd(f *cmdutil.Factory) *cobra.Command {
 	}
 
 	cmd.AddCommand(newVariableListCmd(f))
+	cmd.AddCommand(newVariableGetCmd(f))
 
 	return cmd
 }
@@ -136,6 +137,92 @@ func newVariableListCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().IntVarP(&limit, "limit", "L", 30, "Maximum number of results")
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
 	cmd.Flags().StringVarP(&group, "group", "g", "", "List group-level variables (specify group path)")
+
+	return cmd
+}
+
+func newVariableGetCmd(f *cmdutil.Factory) *cobra.Command {
+	var (
+		jsonFlag bool
+		group    string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "get <key>",
+		Short: "Get a CI/CD variable",
+		Example: `  $ glab variable get MY_VAR
+  $ glab variable get MY_VAR --group mygroup
+  $ glab variable get MY_VAR --json`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := f.Client()
+			if err != nil {
+				return err
+			}
+
+			key := args[0]
+
+			if group != "" {
+				// Get group-level variable
+				variable, _, err := client.GroupVariables.GetVariable(group, key, nil)
+				if err != nil {
+					return fmt.Errorf("getting group variable: %w", err)
+				}
+
+				if jsonFlag {
+					data, err := json.MarshalIndent(variable, "", "  ")
+					if err != nil {
+						return err
+					}
+					fmt.Fprintln(f.IOStreams.Out, string(data))
+					return nil
+				}
+
+				// Display variable details
+				out := f.IOStreams.Out
+				fmt.Fprintf(out, "Key: %s\n", variable.Key)
+				fmt.Fprintf(out, "Value: %s\n", variable.Value)
+				fmt.Fprintf(out, "Environment Scope: %s\n", variable.EnvironmentScope)
+				fmt.Fprintf(out, "Protected: %t\n", variable.Protected)
+				fmt.Fprintf(out, "Masked: %t\n", variable.Masked)
+				fmt.Fprintf(out, "Variable Type: %s\n", variable.VariableType)
+				return nil
+			}
+
+			// Get project-level variable
+			project, err := f.FullProjectPath()
+			if err != nil {
+				return err
+			}
+
+			variable, _, err := client.ProjectVariables.GetVariable(project, key, nil)
+			if err != nil {
+				return fmt.Errorf("getting project variable: %w", err)
+			}
+
+			if jsonFlag {
+				data, err := json.MarshalIndent(variable, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(f.IOStreams.Out, string(data))
+				return nil
+			}
+
+			// Display variable details
+			out := f.IOStreams.Out
+			fmt.Fprintf(out, "Key: %s\n", variable.Key)
+			fmt.Fprintf(out, "Value: %s\n", variable.Value)
+			fmt.Fprintf(out, "Environment Scope: %s\n", variable.EnvironmentScope)
+			fmt.Fprintf(out, "Protected: %t\n", variable.Protected)
+			fmt.Fprintf(out, "Masked: %t\n", variable.Masked)
+			fmt.Fprintf(out, "Variable Type: %s\n", variable.VariableType)
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
+	cmd.Flags().StringVarP(&group, "group", "g", "", "Get group-level variable (specify group path)")
 
 	return cmd
 }
