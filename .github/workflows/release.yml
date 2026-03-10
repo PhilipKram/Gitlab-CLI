@@ -7,24 +7,34 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   release:
-    name: Release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
 
       - name: Run tests
         run: go test ./...
+
+      - name: Ensure homebrew-tap repo exists
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN not set, skipping homebrew-tap repo check"
+            exit 0
+          fi
+          if ! gh repo view PhilipKram/homebrew-tap >/dev/null 2>&1; then
+            gh repo create PhilipKram/homebrew-tap --public \
+              --description "Homebrew formulae for PhilipKram projects"
+          fi
 
       - name: Determine goreleaser args
         id: goreleaser
@@ -33,16 +43,13 @@ jobs:
         run: |
           if [ -z "$HOMEBREW_TOKEN" ]; then
             echo "HOMEBREW_TAP_TOKEN not set, skipping homebrew formula publish"
-            echo "args=release --clean --skip=brews" >> "$GITHUB_OUTPUT"
+            echo "args=release --clean --skip=homebrew" >> "$GITHUB_OUTPUT"
           else
             echo "args=release --clean" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v6
         with:
-          distribution: goreleaser
-          version: "~> v2"
           args: ${{ steps.goreleaser.outputs.args }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -52,6 +59,7 @@ jobs:
         if: success()
         env:
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -z "$TEAMS_WEBHOOK_URL" ]; then
             echo "TEAMS_WEBHOOK_URL not set, skipping Teams notification"
