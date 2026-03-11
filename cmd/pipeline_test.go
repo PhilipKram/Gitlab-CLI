@@ -316,7 +316,13 @@ func TestPipelineList_Unauthorized(t *testing.T) {
 
 func TestPipelineRun_Success(t *testing.T) {
 	cmdtest.MockGitLabServer(t, "gitlab.com", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" && strings.Contains(r.URL.Path, "/pipeline") {
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/triggers") {
+			cmdtest.JSONResponse(w, 200, []map[string]interface{}{
+				{"id": 1, "token": "test-trigger-token", "description": "glab-cli"},
+			})
+			return
+		}
+		if r.Method == "POST" && strings.Contains(r.URL.Path, "/trigger/pipeline") {
 			cmdtest.JSONResponse(w, 201, cmdtest.FixturePipelineRunning)
 			return
 		}

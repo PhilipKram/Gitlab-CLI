@@ -465,8 +465,15 @@ func TestPipelineRun(t *testing.T) {
 	// Create a mock GitLab API server
 	router := cmdtest.NewMockAPIRouter(t)
 
-	// Mock the create pipeline endpoint (POST)
-	router.Register("POST", "/api/v4/projects/test-owner/test-repo/pipeline", func(w http.ResponseWriter, r *http.Request) {
+	// Mock the trigger token list endpoint
+	router.Register("GET", "/api/v4/projects/test-owner/test-repo/triggers", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "token": "test-trigger-token", "description": "glab-cli"},
+		})
+	})
+
+	// Mock the trigger pipeline endpoint (POST)
+	router.Register("POST", "/api/v4/projects/test-owner/test-repo/trigger/pipeline", func(w http.ResponseWriter, r *http.Request) {
 		// Return a newly created pipeline (pending status)
 		cmdtest.JSONResponse(w, http.StatusCreated, cmdtest.FixturePipelinePending)
 	})
@@ -518,7 +525,13 @@ func TestPipelineRun_WithVariables(t *testing.T) {
 
 	router := cmdtest.NewMockAPIRouter(t)
 
-	router.Register("POST", "/api/v4/projects/test-owner/test-repo/pipeline", func(w http.ResponseWriter, r *http.Request) {
+	router.Register("GET", "/api/v4/projects/test-owner/test-repo/triggers", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "token": "test-trigger-token", "description": "glab-cli"},
+		})
+	})
+
+	router.Register("POST", "/api/v4/projects/test-owner/test-repo/trigger/pipeline", func(w http.ResponseWriter, r *http.Request) {
 		// Return a newly created pipeline
 		cmdtest.JSONResponse(w, http.StatusCreated, cmdtest.FixturePipelinePending)
 	})
@@ -580,7 +593,13 @@ func TestPipelineRun_APIError(t *testing.T) {
 
 	router := cmdtest.NewMockAPIRouter(t)
 
-	router.Register("POST", "/api/v4/projects/test-owner/test-repo/pipeline", func(w http.ResponseWriter, r *http.Request) {
+	router.Register("GET", "/api/v4/projects/test-owner/test-repo/triggers", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "token": "test-trigger-token", "description": "glab-cli"},
+		})
+	})
+
+	router.Register("POST", "/api/v4/projects/test-owner/test-repo/trigger/pipeline", func(w http.ResponseWriter, r *http.Request) {
 		// Return an API error
 		cmdtest.ErrorResponse(w, http.StatusBadRequest, "Reference not found")
 	})
@@ -602,7 +621,7 @@ func TestPipelineRun_APIError(t *testing.T) {
 
 	// Error should mention the failure
 	errMsg := err.Error()
-	if !strings.Contains(errMsg, "Failed to create pipeline") {
-		t.Errorf("expected error about pipeline creation failure, got: %v", err)
+	if !strings.Contains(errMsg, "Failed to trigger pipeline") {
+		t.Errorf("expected error about pipeline trigger failure, got: %v", err)
 	}
 }

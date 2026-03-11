@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/PhilipKram/gitlab-cli/internal/api"
 	"github.com/PhilipKram/gitlab-cli/internal/cmdutil"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
@@ -83,14 +84,14 @@ func registerPipelineView(server *mcp.Server, f *cmdutil.Factory) {
 
 func registerPipelineRun(server *mcp.Server, f *cmdutil.Factory) {
 	type Input struct {
-		Ref       string `json:"ref"              jsonschema:"branch or tag to run the pipeline on"`
-		Repo      string `json:"repo,omitempty"   jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
-		Variables string `json:"variables,omitempty" jsonschema:"pipeline variables as KEY=value pairs, comma-separated"`
+		Ref       string `json:"ref"                jsonschema:"branch or tag to run the pipeline on"`
+		Repo      string `json:"repo,omitempty"     jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
+		Variables string `json:"variables,omitempty" jsonschema:"pipeline variables as KEY=value pairs, semicolon-separated (e.g. KEY1=value1;KEY2=a,b,c)"`
 	}
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pipeline_run",
-		Description: "Trigger a new pipeline on a branch or tag",
+		Description: "Trigger a new pipeline on a branch or tag. Uses the trigger API which properly resolves the branch's own CI config. Variables are semicolon-separated to allow commas in values.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in Input) (*mcp.CallToolResult, any, error) {
 		if err := requireString(in.Ref, "ref"); err != nil {
 			return nil, nil, err
@@ -99,31 +100,69 @@ func registerPipelineRun(server *mcp.Server, f *cmdutil.Factory) {
 		if err != nil {
 			return nil, nil, err
 		}
-		opts := &gitlab.CreatePipelineOptions{Ref: &in.Ref}
+
+		// Parse variables (semicolon-separated to allow commas in values)
+		varsMap := make(map[string]string)
 		if in.Variables != "" {
-			var vars []*gitlab.PipelineVariableOptions
-			for _, pair := range strings.Split(in.Variables, ",") {
+			for _, pair := range strings.Split(in.Variables, ";") {
+				pair = strings.TrimSpace(pair)
+				if pair == "" {
+					continue
+				}
 				parts := strings.SplitN(pair, "=", 2)
 				if len(parts) != 2 {
 					return nil, nil, fmt.Errorf("invalid variable %q: use KEY=value", pair)
 				}
-				key := strings.TrimSpace(parts[0])
-				value := strings.TrimSpace(parts[1])
-				varType := gitlab.VariableTypeValue("env_var")
-				vars = append(vars, &gitlab.PipelineVariableOptions{
-					Key:          &key,
-					Value:        &value,
-					VariableType: &varType,
-				})
+				varsMap[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 			}
-			opts.Variables = &vars
 		}
-		pipeline, _, err := client.Pipelines.CreatePipeline(project, opts)
+
+		// Get or create a trigger token for the project
+		token, err := getOrCreateTriggerToken(client, project)
 		if err != nil {
-			return nil, nil, fmt.Errorf("creating pipeline: %w", err)
+			return nil, nil, err
 		}
+
+		opts := &gitlab.RunPipelineTriggerOptions{
+			Ref:   &in.Ref,
+			Token: &token,
+		}
+		if len(varsMap) > 0 {
+			opts.Variables = varsMap
+		}
+
+		pipeline, _, err := client.PipelineTriggers.RunPipelineTrigger(project, opts)
+		if err != nil {
+			return nil, nil, fmt.Errorf("triggering pipeline: %w", err)
+		}
+
 		return plainResult(fmt.Sprintf("Created pipeline #%d (status: %s)\n%s", pipeline.ID, pipeline.Status, pipeline.WebURL)), nil, nil
 	})
+}
+
+// getOrCreateTriggerToken returns an existing pipeline trigger token for the project,
+// or creates one if none exist.
+func getOrCreateTriggerToken(client *api.Client, project string) (string, error) {
+	triggers, _, err := client.PipelineTriggers.ListPipelineTriggers(project, nil)
+	if err != nil {
+		return "", fmt.Errorf("listing trigger tokens: %w", err)
+	}
+
+	for _, t := range triggers {
+		if t.Token != "" {
+			return t.Token, nil
+		}
+	}
+
+	// No trigger tokens exist — create one
+	desc := "glab-cli"
+	newTrigger, _, err := client.PipelineTriggers.AddPipelineTrigger(project, &gitlab.AddPipelineTriggerOptions{
+		Description: &desc,
+	})
+	if err != nil {
+		return "", fmt.Errorf("creating trigger token: %w", err)
+	}
+	return newTrigger.Token, nil
 }
 
 func registerPipelineCancel(server *mcp.Server, f *cmdutil.Factory) {

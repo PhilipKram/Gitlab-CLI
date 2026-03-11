@@ -844,7 +844,12 @@ func TestPipelineView(t *testing.T) {
 
 func TestPipelineRun(t *testing.T) {
 	mux := cmdtest.NewRouterMux()
-	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/pipeline", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/triggers", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "token": "test-trigger-token", "description": "glab-cli"},
+		})
+	})
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/trigger/pipeline", func(w http.ResponseWriter, r *http.Request) {
 		p := cmdtest.MockPipeline(200, "main", "created")
 		p["web_url"] = "https://gitlab.com/test-owner/test-repo/-/pipelines/200"
 		cmdtest.JSONResponse(w, http.StatusCreated, p)
@@ -865,7 +870,12 @@ func TestPipelineRun(t *testing.T) {
 
 func TestPipelineRunWithVariables(t *testing.T) {
 	mux := cmdtest.NewRouterMux()
-	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/pipeline", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/triggers", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "token": "test-trigger-token", "description": "glab-cli"},
+		})
+	})
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/trigger/pipeline", func(w http.ResponseWriter, r *http.Request) {
 		p := cmdtest.MockPipeline(201, "main", "created")
 		p["web_url"] = "https://gitlab.com/test-owner/test-repo/-/pipelines/201"
 		cmdtest.JSONResponse(w, http.StatusCreated, p)
@@ -875,7 +885,7 @@ func TestPipelineRunWithVariables(t *testing.T) {
 	text, err := callTool(t, cs, "pipeline_run", map[string]any{
 		"repo":      "test-owner/test-repo",
 		"ref":       "main",
-		"variables": "KEY1=val1,KEY2=val2",
+		"variables": "KEY1=val1;KEY2=val2",
 	})
 	if err != nil {
 		t.Fatal(err)
