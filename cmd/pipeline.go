@@ -262,9 +262,10 @@ func newPipelineViewCmd(f *cmdutil.Factory) *cobra.Command {
 
 func newPipelineRunCmd(f *cmdutil.Factory) *cobra.Command {
 	var (
-		ref       string
-		branch    string
-		variables []string
+		ref          string
+		branch       string
+		variables    []string
+		triggerToken string
 	)
 
 	cmd := &cobra.Command{
@@ -272,7 +273,8 @@ func newPipelineRunCmd(f *cmdutil.Factory) *cobra.Command {
 		Short:   "Run a new pipeline",
 		Aliases: []string{"create", "trigger"},
 		Example: `  $ glab pipeline run --branch main
-  $ glab pipeline run --ref develop --variables KEY1=value1,KEY2=value2`,
+  $ glab pipeline run --ref develop --variables KEY1=value1,KEY2=value2
+  $ glab pipeline run --ref feature/my-branch --trigger-token glptt-xxx --variables KEY1=value1`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// --branch is an alias for --ref
 			if branch != "" && ref == "" {
@@ -292,35 +294,68 @@ func newPipelineRunCmd(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 
-			opts := &gitlab.CreatePipelineOptions{
-				Ref: &ref,
+			// Parse variables into a map (used by both code paths)
+			varsMap := make(map[string]string)
+			for _, v := range variables {
+				parts := strings.SplitN(v, "=", 2)
+				if len(parts) != 2 {
+					return fmt.Errorf("invalid variable format: %s (use KEY=value)", v)
+				}
+				varsMap[parts[0]] = parts[1]
 			}
 
-			if len(variables) > 0 {
-				var vars []*gitlab.PipelineVariableOptions
-				for _, v := range variables {
-					parts := strings.SplitN(v, "=", 2)
-					if len(parts) != 2 {
-						return fmt.Errorf("invalid variable format: %s (use KEY=value)", v)
+			var pipeline *gitlab.Pipeline
+
+			if triggerToken != "" {
+				// Use the trigger API — variables are passed as form data,
+				// which properly overrides CI variable defaults and uses the
+				// branch's own CI config (unlike the pipelines API in some cases).
+				opts := &gitlab.RunPipelineTriggerOptions{
+					Ref:   &ref,
+					Token: &triggerToken,
+				}
+				if len(varsMap) > 0 {
+					opts.Variables = varsMap
+				}
+				var resp *gitlab.Response
+				pipeline, resp, err = client.PipelineTriggers.RunPipelineTrigger(project, opts)
+				if err != nil {
+					statusCode := 0
+					if resp != nil {
+						statusCode = resp.StatusCode
 					}
-					varType := gitlab.VariableTypeValue("env_var")
-					vars = append(vars, &gitlab.PipelineVariableOptions{
-						Key:          &parts[0],
-						Value:        &parts[1],
-						VariableType: &varType,
-					})
+					url := api.APIURL(client.Host()) + "/projects/" + project + "/trigger/pipeline"
+					return errors.NewAPIError("POST", url, statusCode, "Failed to trigger pipeline", err)
 				}
-				opts.Variables = &vars
-			}
-
-			pipeline, resp, err := client.Pipelines.CreatePipeline(project, opts)
-			if err != nil {
-				statusCode := 0
-				if resp != nil {
-					statusCode = resp.StatusCode
+			} else {
+				// Use the standard pipelines API
+				opts := &gitlab.CreatePipelineOptions{
+					Ref: &ref,
 				}
-				url := api.APIURL(client.Host()) + "/projects/" + project + "/pipeline"
-				return errors.NewAPIError("POST", url, statusCode, "Failed to create pipeline", err)
+				if len(varsMap) > 0 {
+					var vars []*gitlab.PipelineVariableOptions
+					for k, v := range varsMap {
+						key := k
+						value := v
+						varType := gitlab.VariableTypeValue("env_var")
+						vars = append(vars, &gitlab.PipelineVariableOptions{
+							Key:          &key,
+							Value:        &value,
+							VariableType: &varType,
+						})
+					}
+					opts.Variables = &vars
+				}
+				var resp *gitlab.Response
+				pipeline, resp, err = client.Pipelines.CreatePipeline(project, opts)
+				if err != nil {
+					statusCode := 0
+					if resp != nil {
+						statusCode = resp.StatusCode
+					}
+					url := api.APIURL(client.Host()) + "/projects/" + project + "/pipeline"
+					return errors.NewAPIError("POST", url, statusCode, "Failed to create pipeline", err)
+				}
 			}
 
 			out := f.IOStreams.Out
@@ -334,7 +369,8 @@ func newPipelineRunCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().StringVarP(&ref, "ref", "b", "", "Branch or tag to run pipeline on (required)")
 	cmd.Flags().StringVar(&branch, "branch", "", "Alias for --ref")
 	cmd.Flags().Lookup("branch").Hidden = true
-	cmd.Flags().StringSliceVar(&variables, "variables", nil, "Pipeline variables (KEY=value)")
+	cmd.Flags().StringArrayVar(&variables, "variables", nil, "Pipeline variables (KEY=value)")
+	cmd.Flags().StringVar(&triggerToken, "trigger-token", "", "Pipeline trigger token (uses trigger API instead of pipelines API)")
 
 	return cmd
 }

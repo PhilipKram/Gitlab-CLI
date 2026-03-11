@@ -83,14 +83,15 @@ func registerPipelineView(server *mcp.Server, f *cmdutil.Factory) {
 
 func registerPipelineRun(server *mcp.Server, f *cmdutil.Factory) {
 	type Input struct {
-		Ref       string `json:"ref"              jsonschema:"branch or tag to run the pipeline on"`
-		Repo      string `json:"repo,omitempty"   jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
-		Variables string `json:"variables,omitempty" jsonschema:"pipeline variables as KEY=value pairs, comma-separated"`
+		Ref          string `json:"ref"                    jsonschema:"branch or tag to run the pipeline on"`
+		Repo         string `json:"repo,omitempty"         jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
+		Variables    string `json:"variables,omitempty"     jsonschema:"pipeline variables as KEY=value pairs, comma-separated"`
+		TriggerToken string `json:"trigger_token,omitempty" jsonschema:"pipeline trigger token; when set uses the trigger API which properly resolves the branch CI config"`
 	}
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pipeline_run",
-		Description: "Trigger a new pipeline on a branch or tag",
+		Description: "Trigger a new pipeline on a branch or tag. Use trigger_token for pipelines that need the branch's own CI config (e.g. feature branches with new jobs).",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in Input) (*mcp.CallToolResult, any, error) {
 		if err := requireString(in.Ref, "ref"); err != nil {
 			return nil, nil, err
@@ -99,29 +100,56 @@ func registerPipelineRun(server *mcp.Server, f *cmdutil.Factory) {
 		if err != nil {
 			return nil, nil, err
 		}
-		opts := &gitlab.CreatePipelineOptions{Ref: &in.Ref}
+
+		// Parse variables
+		varsMap := make(map[string]string)
 		if in.Variables != "" {
-			var vars []*gitlab.PipelineVariableOptions
 			for _, pair := range strings.Split(in.Variables, ",") {
 				parts := strings.SplitN(pair, "=", 2)
 				if len(parts) != 2 {
 					return nil, nil, fmt.Errorf("invalid variable %q: use KEY=value", pair)
 				}
-				key := strings.TrimSpace(parts[0])
-				value := strings.TrimSpace(parts[1])
-				varType := gitlab.VariableTypeValue("env_var")
-				vars = append(vars, &gitlab.PipelineVariableOptions{
-					Key:          &key,
-					Value:        &value,
-					VariableType: &varType,
-				})
+				varsMap[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 			}
-			opts.Variables = &vars
 		}
-		pipeline, _, err := client.Pipelines.CreatePipeline(project, opts)
-		if err != nil {
-			return nil, nil, fmt.Errorf("creating pipeline: %w", err)
+
+		var pipeline *gitlab.Pipeline
+		if in.TriggerToken != "" {
+			// Use the trigger API — properly resolves branch CI config
+			opts := &gitlab.RunPipelineTriggerOptions{
+				Ref:   &in.Ref,
+				Token: &in.TriggerToken,
+			}
+			if len(varsMap) > 0 {
+				opts.Variables = varsMap
+			}
+			pipeline, _, err = client.PipelineTriggers.RunPipelineTrigger(project, opts)
+			if err != nil {
+				return nil, nil, fmt.Errorf("triggering pipeline: %w", err)
+			}
+		} else {
+			// Use the standard pipelines API
+			opts := &gitlab.CreatePipelineOptions{Ref: &in.Ref}
+			if len(varsMap) > 0 {
+				var vars []*gitlab.PipelineVariableOptions
+				for k, v := range varsMap {
+					key := k
+					value := v
+					varType := gitlab.VariableTypeValue("env_var")
+					vars = append(vars, &gitlab.PipelineVariableOptions{
+						Key:          &key,
+						Value:        &value,
+						VariableType: &varType,
+					})
+				}
+				opts.Variables = &vars
+			}
+			pipeline, _, err = client.Pipelines.CreatePipeline(project, opts)
+			if err != nil {
+				return nil, nil, fmt.Errorf("creating pipeline: %w", err)
+			}
 		}
+
 		return plainResult(fmt.Sprintf("Created pipeline #%d (status: %s)\n%s", pipeline.ID, pipeline.Status, pipeline.WebURL)), nil, nil
 	})
 }
