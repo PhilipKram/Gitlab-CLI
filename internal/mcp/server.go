@@ -24,6 +24,9 @@ func NewMCPServer(f *cmdutil.Factory) *mcp.Server {
 	tools.RegisterSnippetTools(server, f)
 	tools.RegisterBranchTools(server, f)
 	tools.RegisterUserTools(server, f)
+	tools.RegisterVariableTools(server, f)
+	tools.RegisterEnvironmentTools(server, f)
+	tools.RegisterDeploymentTools(server, f)
 
 	resources.RegisterResources(server, f)
 	prompts.RegisterPrompts(server, f)
