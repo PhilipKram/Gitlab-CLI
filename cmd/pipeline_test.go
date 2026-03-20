@@ -52,6 +52,7 @@ func TestPipelineCmd_HasSubcommands(t *testing.T) {
 		"trends",
 		"flaky",
 		"watch",
+		"lint",
 	}
 
 	subcommands := cmd.Commands()
