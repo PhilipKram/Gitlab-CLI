@@ -226,8 +226,8 @@ func TestExtractBinary_TarGz_NestedPath(t *testing.T) {
 
 	// Write binary in a nested path
 	writeTarEntry(t, tw, "glab_1.0.0/"+binaryName, binaryContent)
-	tw.Close()
-	gzWriter.Close()
+	_ = tw.Close()
+	_ = gzWriter.Close()
 
 	if err := os.WriteFile(archivePath, archiveBuf.Bytes(), 0o644); err != nil {
 		t.Fatal(err)

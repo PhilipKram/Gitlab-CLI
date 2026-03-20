@@ -86,7 +86,7 @@ func newPipelineWatchCmd(f *cmdutil.Factory) *cobra.Command {
 				if !first {
 					select {
 					case <-ctx.Done():
-						fmt.Fprintln(out, "\nWatch canceled.")
+						_, _ = fmt.Fprintln(out, "\nWatch canceled.")
 						return nil
 					case <-ticker.C:
 					}
@@ -115,30 +115,30 @@ func newPipelineWatchCmd(f *cmdutil.Factory) *cobra.Command {
 				}
 
 				// Clear screen
-				fmt.Fprint(out, "\033[2J\033[H")
+				_, _ = fmt.Fprint(out, "\033[2J\033[H")
 
 				// Pipeline header
-				fmt.Fprintf(out, "Pipeline #%d  %s\n", pipeline.ID, statusColor(pipeline.Status))
-				fmt.Fprintf(out, "Ref:       %s\n", pipeline.Ref)
-				fmt.Fprintf(out, "Source:    %s\n", pipeline.Source)
+				_, _ = fmt.Fprintf(out, "Pipeline #%d  %s\n", pipeline.ID, statusColor(pipeline.Status))
+				_, _ = fmt.Fprintf(out, "Ref:       %s\n", pipeline.Ref)
+				_, _ = fmt.Fprintf(out, "Source:    %s\n", pipeline.Source)
 				if pipeline.CreatedAt != nil {
-					fmt.Fprintf(out, "Created:   %s\n", pipeline.CreatedAt.Format(time.RFC3339))
+					_, _ = fmt.Fprintf(out, "Created:   %s\n", pipeline.CreatedAt.Format(time.RFC3339))
 				}
 				if pipeline.Duration > 0 {
-					fmt.Fprintf(out, "Duration:  %ds\n", pipeline.Duration)
+					_, _ = fmt.Fprintf(out, "Duration:  %ds\n", pipeline.Duration)
 				}
-				fmt.Fprintln(out)
+				_, _ = fmt.Fprintln(out)
 
 				// Jobs table
 				if len(jobs) > 0 {
-					fmt.Fprintf(out, "%-30s %-20s %-12s %s\n", "NAME", "STAGE", "STATUS", "DURATION")
-					fmt.Fprintf(out, "%-30s %-20s %-12s %s\n", "----", "-----", "------", "--------")
+					_, _ = fmt.Fprintf(out, "%-30s %-20s %-12s %s\n", "NAME", "STAGE", "STATUS", "DURATION")
+					_, _ = fmt.Fprintf(out, "%-30s %-20s %-12s %s\n", "----", "-----", "------", "--------")
 					for _, job := range jobs {
 						duration := ""
 						if job.Duration > 0 {
 							duration = fmt.Sprintf("%.0fs", job.Duration)
 						}
-						fmt.Fprintf(out, "%-30s %-20s %-12s %s\n",
+						_, _ = fmt.Fprintf(out, "%-30s %-20s %-12s %s\n",
 							truncateWatch(job.Name, 30),
 							truncateWatch(job.Stage, 20),
 							statusColor(job.Status),
@@ -148,7 +148,7 @@ func newPipelineWatchCmd(f *cmdutil.Factory) *cobra.Command {
 				}
 
 				if isTerminalStatus(pipeline.Status) {
-					fmt.Fprintf(out, "\nPipeline finished with status: %s\n", statusColor(pipeline.Status))
+					_, _ = fmt.Fprintf(out, "\nPipeline finished with status: %s\n", statusColor(pipeline.Status))
 					if pipeline.Status == "failed" {
 						return fmt.Errorf("pipeline #%d failed", pipeline.ID)
 					}

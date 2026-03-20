@@ -1308,7 +1308,7 @@ func TestVariableExport_WithFile(t *testing.T) {
 	cmd := newVariableExportCmd(f.Factory)
 
 	tmpFile := filepath.Join(os.TempDir(), "test_export.json")
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	cmd.SetArgs([]string{"--output", tmpFile})
 

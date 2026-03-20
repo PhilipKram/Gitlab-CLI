@@ -75,8 +75,8 @@ func TestIsTerminal_WithFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pipe: %v", err)
 	}
-	defer r.Close()
-	defer w.Close()
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
 
 	s := &IOStreams{
 		In:     os.Stdin,
@@ -95,8 +95,8 @@ func TestIsStdinTTY_WithPipe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pipe: %v", err)
 	}
-	defer r.Close()
-	defer w.Close()
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
 
 	s := &IOStreams{
 		In:     r,
@@ -115,8 +115,8 @@ func TestTerminalWidth_WithPipe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pipe: %v", err)
 	}
-	defer r.Close()
-	defer w.Close()
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
 
 	s := &IOStreams{
 		In:     os.Stdin,

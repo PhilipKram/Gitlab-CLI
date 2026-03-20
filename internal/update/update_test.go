@@ -377,7 +377,7 @@ func TestValidateAssetURL(t *testing.T) {
 func TestCheckLatestRelease_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{
+		_, _ = fmt.Fprint(w, `{
 			"tag_name": "v2.0.0",
 			"html_url": "https://github.com/PhilipKram/Gitlab-CLI/releases/tag/v2.0.0",
 			"assets": [
@@ -474,7 +474,7 @@ func TestCheckLatestRelease_ServerError(t *testing.T) {
 func TestCheckLatestRelease_InvalidJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, "not valid json")
+		_, _ = fmt.Fprint(w, "not valid json")
 	}))
 	defer srv.Close()
 
@@ -494,7 +494,7 @@ func TestCheckLatestRelease_InvalidJSON(t *testing.T) {
 func TestCheckLatestRelease_SameVersion(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"tag_name": "v1.0.0", "html_url": "https://example.com/release", "assets": []}`)
+		_, _ = fmt.Fprint(w, `{"tag_name": "v1.0.0", "html_url": "https://example.com/release", "assets": []}`)
 	}))
 	defer srv.Close()
 
@@ -646,8 +646,8 @@ func TestExtractBinary_TarGz(t *testing.T) {
 	}
 
 	writeTarEntry(t, tw, binaryName, binaryContent)
-	tw.Close()
-	gzWriter.Close()
+	_ = tw.Close()
+	_ = gzWriter.Close()
 
 	if err := os.WriteFile(archivePath, archiveBuf.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
@@ -678,8 +678,8 @@ func TestExtractBinary_TarGz_NoBinary(t *testing.T) {
 
 	// Write a file that is NOT the glab binary
 	writeTarEntry(t, tw, "README.md", []byte("readme"))
-	tw.Close()
-	gzWriter.Close()
+	_ = tw.Close()
+	_ = gzWriter.Close()
 
 	if err := os.WriteFile(archivePath, archiveBuf.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
@@ -719,7 +719,7 @@ func TestVerifyChecksum_NoMatchingEntry(t *testing.T) {
 
 	// Checksums file with no matching entry
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "abcdef1234567890  glab_1.0.0_windows_amd64.zip\n")
+		_, _ = fmt.Fprint(w, "abcdef1234567890  glab_1.0.0_windows_amd64.zip\n")
 	}))
 	defer srv.Close()
 
@@ -776,7 +776,7 @@ func TestCompareVersions_EdgeCases(t *testing.T) {
 func TestDownloadAsset_Success(t *testing.T) {
 	content := "downloaded binary content"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, content)
+		_, _ = fmt.Fprint(w, content)
 	}))
 	defer srv.Close()
 

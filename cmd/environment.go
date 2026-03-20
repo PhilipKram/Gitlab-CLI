@@ -197,7 +197,7 @@ func newEnvironmentStopCmd(f *cmdutil.Factory) *cobra.Command {
 				return errors.NewAPIError("POST", url, statusCode, "Failed to stop environment", err)
 			}
 
-			fmt.Fprintf(f.IOStreams.Out, "Environment #%d stopped\n", environmentID)
+			_, _ = fmt.Fprintf(f.IOStreams.Out, "Environment #%d stopped\n", environmentID)
 			return nil
 		},
 	}
@@ -236,7 +236,7 @@ func newEnvironmentDeleteCmd(f *cmdutil.Factory) *cobra.Command {
 				return errors.NewAPIError("DELETE", url, statusCode, "Failed to delete environment", err)
 			}
 
-			fmt.Fprintf(f.IOStreams.Out, "Environment #%d deleted\n", environmentID)
+			_, _ = fmt.Fprintf(f.IOStreams.Out, "Environment #%d deleted\n", environmentID)
 			return nil
 		},
 	}

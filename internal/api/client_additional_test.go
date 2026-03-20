@@ -142,7 +142,7 @@ func TestGetAndCacheVersion(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/version") {
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{"version":"17.1.0","revision":"abc123"}`)
+			_, _ = fmt.Fprint(w, `{"version":"17.1.0","revision":"abc123"}`)
 			return
 		}
 		w.WriteHeader(404)
@@ -224,7 +224,7 @@ func TestGetAndCacheVersion_HostNotInConfig(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/version") {
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{"version":"16.0.0","revision":"abc"}`)
+			_, _ = fmt.Fprint(w, `{"version":"16.0.0","revision":"abc"}`)
 			return
 		}
 		w.WriteHeader(404)

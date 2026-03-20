@@ -51,7 +51,7 @@ func (t *RateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error
 		}
 
 		// Close the 429 response body before retrying
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		fmt.Fprintf(os.Stderr, "Rate limited by GitLab API, retrying in %s...\n", wait)
 		time.Sleep(wait)
