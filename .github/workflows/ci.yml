@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ["1.24"]
+        go-version: ["1.25"]
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +45,7 @@ jobs:
           echo "Integration tests completed at $(date +%s)" >> test-timing.txt
 
       - name: Merge Coverage
-        if: matrix.go-version == '1.24'
+        if: matrix.go-version == '1.25'
         run: |
           # Install gocovmerge for merging coverage files
           go install github.com/wadey/gocovmerge@latest
@@ -55,7 +55,7 @@ jobs:
           cat test-timing.txt >> $GITHUB_STEP_SUMMARY
 
       - name: Check test performance
-        if: matrix.go-version == '1.24'
+        if: matrix.go-version == '1.25'
         run: |
           # Calculate total test execution time
           START_TIME=$(head -1 test-timing.txt | awk '{print $5}')
@@ -71,7 +71,7 @@ jobs:
           fi
 
       - name: Generate coverage report
-        if: matrix.go-version == '1.24'
+        if: matrix.go-version == '1.25'
         run: |
           go tool cover -html=coverage.out -o coverage.html
           echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
@@ -80,7 +80,7 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Check coverage target
-        if: matrix.go-version == '1.24'
+        if: matrix.go-version == '1.25'
         run: |
           # Extract total coverage percentage
           TOTAL_COVERAGE=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | sed 's/%//')
@@ -96,7 +96,7 @@ jobs:
           fi
 
       - name: Upload coverage reports
-        if: matrix.go-version == '1.24'
+        if: matrix.go-version == '1.25'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-reports
@@ -121,7 +121,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
 
       - name: Build
         env:
@@ -148,7 +148,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
