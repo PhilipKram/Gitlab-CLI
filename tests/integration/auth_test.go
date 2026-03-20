@@ -1,7 +1,6 @@
 package integration_test
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -51,7 +50,7 @@ func TestAuthStatus_WithToken(t *testing.T) {
 // TestAuthStatus_NoAuth verifies auth status handles no authentication gracefully
 func TestAuthStatus_NoAuth(t *testing.T) {
 	// Ensure no token in environment
-	os.Unsetenv("GITLAB_TOKEN")
+	t.Setenv("GITLAB_TOKEN", "")
 
 	f := cmdtest.NewTestFactory(t)
 

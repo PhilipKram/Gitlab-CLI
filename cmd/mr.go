@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/PhilipKram/gitlab-cli/internal/browser"
 	"github.com/PhilipKram/gitlab-cli/internal/cmdutil"
 	"github.com/PhilipKram/gitlab-cli/internal/errors"
+	"github.com/PhilipKram/gitlab-cli/internal/formatter"
 	gitutil "github.com/PhilipKram/gitlab-cli/internal/git"
 	"github.com/spf13/cobra"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
@@ -1181,7 +1183,16 @@ func newMRDiscussionsCmd(f *cmdutil.Factory) *cobra.Command {
 				return nil
 			}
 
-			return f.FormatAndPrint(discussions, format, jsonFlag)
+			outputFormat, err := f.ResolveFormat(format, jsonFlag)
+			if err != nil {
+				return err
+			}
+
+			if outputFormat == formatter.JSONFormat {
+				return f.FormatAndPrint(discussions, format, jsonFlag)
+			}
+
+			return printDiscussions(f.IOStreams.Out, discussions)
 		},
 	}
 
@@ -1189,6 +1200,77 @@ func newMRDiscussionsCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON (deprecated: use --format=json)")
 
 	return cmd
+}
+
+// printDiscussions renders discussions in a human-readable format showing
+// inline comment context (file, line), author, resolution status, and threaded replies.
+func printDiscussions(out io.Writer, discussions []*gitlab.Discussion) error {
+	idx := 0
+	for _, d := range discussions {
+		if len(d.Notes) == 0 {
+			continue
+		}
+
+		// Skip system-only discussions
+		firstNote := d.Notes[0]
+		if firstNote.System {
+			continue
+		}
+
+		idx++
+		if idx > 1 {
+			_, _ = fmt.Fprintln(out)
+		}
+
+		// Header: #N (status) author [on file:line]
+		var header strings.Builder
+		_, _ = fmt.Fprintf(&header, "#%d", idx)
+		if firstNote.Resolvable {
+			if firstNote.Resolved {
+				header.WriteString(" (resolved)")
+			} else {
+				header.WriteString(" (unresolved)")
+			}
+		}
+		header.WriteString(" ")
+		header.WriteString(firstNote.Author.Username)
+		if pos := firstNote.Position; pos != nil {
+			path := pos.NewPath
+			line := pos.NewLine
+			if path == "" {
+				path = pos.OldPath
+			}
+			if line == 0 {
+				line = pos.OldLine
+			}
+			if path != "" {
+				_, _ = fmt.Fprintf(&header, " on %s", path)
+				if line != 0 {
+					_, _ = fmt.Fprintf(&header, ":%d", line)
+				}
+			}
+		}
+		_, _ = fmt.Fprintln(out, header.String())
+
+		// Body of the first note
+		for _, line := range strings.Split(strings.TrimRight(firstNote.Body, "\n"), "\n") {
+			_, _ = fmt.Fprintf(out, "  %s\n", line)
+		}
+
+		// Threaded replies
+		for _, reply := range d.Notes[1:] {
+			if reply.System {
+				continue
+			}
+			_, _ = fmt.Fprintf(out, "  └─ %s: ", reply.Author.Username)
+			lines := strings.Split(strings.TrimRight(reply.Body, "\n"), "\n")
+			_, _ = fmt.Fprintln(out, lines[0])
+			for _, l := range lines[1:] {
+				_, _ = fmt.Fprintf(out, "     %s\n", l)
+			}
+		}
+	}
+	return nil
 }
 
 // parseMRArg parses the merge request ID from command args.

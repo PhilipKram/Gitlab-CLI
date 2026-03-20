@@ -1125,7 +1125,7 @@ func TestMRDiscussions_Success(t *testing.T) {
 		if strings.Contains(r.URL.Path, "/merge_requests/1/discussions") {
 			cmdtest.JSONResponse(w, 200, []interface{}{
 				map[string]interface{}{
-					"id":            "disc001",
+					"id":              "disc001",
 					"individual_note": false,
 					"notes": []interface{}{
 						map[string]interface{}{
@@ -1151,6 +1151,74 @@ func TestMRDiscussions_Success(t *testing.T) {
 	err := cmd.Execute()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := f.IO.String()
+	if !strings.Contains(output, "#1 (unresolved) test-user") {
+		t.Errorf("expected header with author and status, got: %s", output)
+	}
+	if !strings.Contains(output, "This is a discussion note") {
+		t.Errorf("expected note body in output, got: %s", output)
+	}
+}
+
+func TestMRDiscussions_InlineComment(t *testing.T) {
+	cmdtest.MockGitLabServer(t, "gitlab.com", func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/merge_requests/1/discussions") {
+			cmdtest.JSONResponse(w, 200, []interface{}{
+				map[string]interface{}{
+					"id":              "disc001",
+					"individual_note": false,
+					"notes": []interface{}{
+						map[string]interface{}{
+							"id":         1,
+							"type":       "DiffNote",
+							"body":       "Is this correct?",
+							"author":     map[string]interface{}{"id": 1, "username": "pkramer"},
+							"created_at": "2024-01-01T00:00:00.000Z",
+							"resolvable": true,
+							"resolved":   false,
+							"position": map[string]interface{}{
+								"position_type": "text",
+								"new_path":      "src/devices/DevicesController.kt",
+								"new_line":      47,
+								"old_path":      "src/devices/DevicesController.kt",
+								"old_line":      45,
+							},
+						},
+						map[string]interface{}{
+							"id":         2,
+							"body":       "Yes, the return type changed",
+							"author":     map[string]interface{}{"id": 2, "username": "reviewer"},
+							"created_at": "2024-01-01T01:00:00.000Z",
+							"system":     false,
+						},
+					},
+				},
+			})
+			return
+		}
+		cmdtest.ErrorResponse(w, 404, "not found")
+	})
+
+	f := cmdtest.NewTestFactory(t)
+	cmd := newMRDiscussionsCmd(f.Factory)
+	cmd.SetArgs([]string{"1"})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := f.IO.String()
+	if !strings.Contains(output, "pkramer on src/devices/DevicesController.kt:47") {
+		t.Errorf("expected file:line context in output, got: %s", output)
+	}
+	if !strings.Contains(output, "Is this correct?") {
+		t.Errorf("expected note body, got: %s", output)
+	}
+	if !strings.Contains(output, "reviewer: Yes, the return type changed") {
+		t.Errorf("expected threaded reply, got: %s", output)
 	}
 }
 
