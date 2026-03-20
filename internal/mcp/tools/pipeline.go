@@ -25,10 +25,12 @@ func RegisterPipelineTools(server *mcp.Server, f *cmdutil.Factory) {
 
 func registerPipelineList(server *mcp.Server, f *cmdutil.Factory) {
 	type Input struct {
-		Repo   string `json:"repo,omitempty"   jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
-		Status string `json:"status,omitempty" jsonschema:"filter by status: running, pending, success, failed, canceled, skipped, created, manual"`
-		Branch string `json:"branch,omitempty" jsonschema:"filter by branch name"`
-		Limit  int64  `json:"limit,omitempty"  jsonschema:"maximum number of results (default 30)"`
+		Repo    string `json:"repo,omitempty"     jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
+		Status  string `json:"status,omitempty"   jsonschema:"filter by status: running, pending, success, failed, canceled, skipped, created, manual"`
+		Branch  string `json:"branch,omitempty"   jsonschema:"filter by branch name"`
+		Limit   int64  `json:"limit,omitempty"    jsonschema:"maximum number of results (default 30)"`
+		OrderBy string `json:"order_by,omitempty" jsonschema:"order by: id, status, ref, updated_at, user_id"`
+		Sort    string `json:"sort,omitempty"     jsonschema:"sort order: asc or desc"`
 	}
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -48,6 +50,12 @@ func registerPipelineList(server *mcp.Server, f *cmdutil.Factory) {
 		}
 		if in.Branch != "" {
 			opts.Ref = &in.Branch
+		}
+		if in.OrderBy != "" {
+			opts.OrderBy = &in.OrderBy
+		}
+		if in.Sort != "" {
+			opts.Sort = &in.Sort
 		}
 		pipelines, _, err := client.Pipelines.ListProjectPipelines(project, opts)
 		if err != nil {
