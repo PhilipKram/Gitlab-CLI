@@ -134,12 +134,13 @@ func newPipelineFlakyCmd(f *cmdutil.Factory) *cobra.Command {
 					}
 
 					// Track success/failure counts
-					if job.Status == "success" {
+					switch job.Status {
+					case "success":
 						jobStats[key].successCount++
 						if job.FinishedAt != nil {
 							jobStats[key].lastSuccess = job.FinishedAt.Format(time.RFC3339)
 						}
-					} else if job.Status == "failed" {
+					case "failed":
 						jobStats[key].failureCount++
 						if job.FinishedAt != nil {
 							jobStats[key].lastFailure = job.FinishedAt.Format(time.RFC3339)
