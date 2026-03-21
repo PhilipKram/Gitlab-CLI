@@ -277,6 +277,19 @@ func exchangeCode(host, clientID, code, redirectURI, codeVerifier string) (*OAut
 }
 
 func generateCodeVerifier() (string, error) {
+	return GenerateCodeVerifier()
+}
+
+func generateCodeChallenge(verifier string) string {
+	return GenerateCodeChallenge(verifier)
+}
+
+func generateState() (string, error) {
+	return GenerateState()
+}
+
+// GenerateCodeVerifier creates a PKCE code verifier (43-char base64url string).
+func GenerateCodeVerifier() (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
@@ -284,17 +297,34 @@ func generateCodeVerifier() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
-func generateCodeChallenge(verifier string) string {
+// GenerateCodeChallenge creates a PKCE S256 code challenge from a verifier.
+func GenerateCodeChallenge(verifier string) string {
 	hash := sha256.Sum256([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(hash[:])
 }
 
-func generateState() (string, error) {
+// GenerateState creates a random state string for CSRF protection.
+func GenerateState() (string, error) {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+// BuildAuthURL constructs a GitLab OAuth authorization URL.
+func BuildAuthURL(host, clientID, redirectURI, state, codeChallenge, scopes string) string {
+	return buildAuthURL(host, clientID, redirectURI, state, codeChallenge, scopes)
+}
+
+// ExchangeCode exchanges an authorization code for an OAuth token.
+func ExchangeCode(host, clientID, code, redirectURI, codeVerifier string) (*OAuthTokenResponse, error) {
+	return exchangeCode(host, clientID, code, redirectURI, codeVerifier)
+}
+
+// DefaultScopes returns the default OAuth scopes.
+func DefaultScopes() string {
+	return defaultScopes
 }
 
 // RefreshOAuthToken refreshes an expired OAuth access token using the stored refresh token.

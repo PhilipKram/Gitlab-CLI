@@ -7,8 +7,12 @@ Start it with:
 glab mcp serve
 ```
 
-It exposes 39 GitLab tools, 4 resource types, and 5 prompt templates over stdio using the [Model Context Protocol](https://modelcontextprotocol.io),
+It exposes 39 GitLab tools, 4 resource types, and 5 prompt templates using the [Model Context Protocol](https://modelcontextprotocol.io),
 built with the official [`modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk).
+
+Supports two transports:
+- **stdio** (default) — for use as a local subprocess
+- **http** — for remote/networked access via HTTP with Server-Sent Events
 
 ## Quick Start
 
@@ -45,6 +49,9 @@ glab mcp install --scope project
 
 # Install for Claude Desktop instead
 glab mcp install --client claude-desktop
+
+# Install a remote HTTP MCP server
+glab mcp install --transport http --host myserver.example.com --port 8080 --token my-secret
 ```
 
 **Flags:**
@@ -53,6 +60,11 @@ glab mcp install --client claude-desktop
 |------|---------|-------------|
 | `--scope` | `user` | Where to store the config: `user` (global), `local` (workspace), or `project` (`.claude/mcp.json`) |
 | `--client` | `claude-code` | Target AI client: `claude-code` or `claude-desktop` |
+| `--transport` | `stdio` | Transport mode: `stdio` (local) or `http` (remote) |
+| `--host` | `localhost` | Remote MCP server host (used with `--transport http`) |
+| `--port` | `8080` | Remote MCP server port (used with `--transport http`) |
+| `--base-path` | `/mcp` | Remote MCP server endpoint path (used with `--transport http`) |
+| `--token` | `""` | Bearer token for remote MCP server (used with `--transport http`) |
 
 #### `glab mcp uninstall`
 
@@ -250,6 +262,94 @@ or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 ```
 
 Restart Claude Desktop after editing the config.
+
+---
+
+## HTTP Transport
+
+For remote or networked access, run the MCP server over HTTP:
+
+```bash
+# Start with auto-generated auth token (printed to stderr)
+glab mcp serve --transport http
+
+# Custom host, port, and token
+glab mcp serve --transport http --host 0.0.0.0 --port 9090 --token my-secret
+
+# Stateless mode (no session tracking, simpler but no server-initiated requests)
+glab mcp serve --transport http --stateless
+
+# Disable authentication (not recommended for production)
+glab mcp serve --transport http --no-auth
+```
+
+**Flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--transport` | `stdio` | Transport: `stdio` or `http` |
+| `--host` | `localhost` | HTTP listen address |
+| `--port` | `8080` | HTTP listen port |
+| `--token` | `""` | Bearer token (auto-generated if empty) |
+| `--no-auth` | `false` | Disable bearer token authentication |
+| `--stateless` | `false` | Stateless HTTP mode |
+| `--base-path` | `/mcp` | HTTP endpoint path |
+
+### Authentication
+
+The HTTP server supports two authentication modes:
+
+#### Shared Token (default)
+
+A single bearer token shared by all clients. If you don't provide one via `--token`, a random 64-character hex token is generated and printed to stderr on startup.
+
+```
+Authorization: Bearer <token>
+```
+
+#### Per-User OAuth
+
+When `--client-id` is provided, each user authenticates individually via GitLab OAuth.
+This requires a [GitLab OAuth application](https://docs.gitlab.com/ee/integration/oauth_provider.html) configured with the redirect URI `http://<server-host>:<port>/oauth/callback`.
+
+```bash
+glab mcp serve --transport http --client-id <app-id> --gitlab-host gitlab.example.com
+```
+
+**Flow:**
+1. User visits `http://<server>/oauth/login` in their browser
+2. GitLab prompts for authorization
+3. On success, a session token is displayed on the callback page
+4. User configures their MCP client with that session token as a Bearer token
+
+Each user gets their own GitLab API client scoped to their OAuth token. The MCP server creates per-user tool contexts, so all GitLab API calls use the authenticated user's permissions.
+
+**Flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--client-id` | `""` | GitLab OAuth application ID (enables per-user OAuth) |
+| `--gitlab-host` | from config | GitLab hostname for OAuth |
+
+### Reverse Proxy
+
+For production deployments, consider running behind a reverse proxy (e.g., nginx, Caddy) that provides:
+- TLS termination (the MCP server itself serves plain HTTP)
+- Rate limiting
+- Access logging
+- Additional authentication layers
+
+Example nginx config snippet:
+```nginx
+location /mcp {
+    proxy_pass http://127.0.0.1:8080/mcp;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_buffering off;           # required for SSE
+    proxy_cache off;
+    proxy_read_timeout 86400s;     # long timeout for SSE streams
+}
+```
 
 ---
 
