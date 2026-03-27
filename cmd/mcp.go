@@ -178,6 +178,10 @@ Supports two transport modes:
 					return err
 				}
 			case "http":
+				// Use persisted token if none provided explicitly
+				if token == "" {
+					token = loadMCPToken()
+				}
 				configJSON, err = mcpRemoteConfigJSON(host, port, basePath, token)
 				if err != nil {
 					return err
@@ -525,15 +529,16 @@ func statusClaudeCode(out io.Writer) error {
 
 func newMCPServeCmd(f *cmdutil.Factory) *cobra.Command {
 	var (
-		transport  string
-		port       int
-		host       string
-		token      string
-		noAuth     bool
-		stateless  bool
-		basePath   string
-		clientID   string
-		gitlabHost string
+		transport   string
+		port        int
+		host        string
+		token       string
+		noAuth      bool
+		stateless   bool
+		basePath    string
+		clientID    string
+		gitlabHost  string
+		externalURL string
 	)
 
 	cmd := &cobra.Command{
@@ -576,7 +581,7 @@ server URL with no token needed.`,
 				return server.Run(context.Background(), &mcp.StdioTransport{})
 			case "http":
 				if clientID != "" {
-					return serveHTTPOAuth(f, host, port, clientID, gitlabHost, stateless, basePath)
+					return serveHTTPOAuth(f, host, port, clientID, gitlabHost, stateless, basePath, externalURL)
 				}
 				server := glabmcp.NewMCPServer(f)
 				return serveHTTP(f, server, host, port, token, noAuth, stateless, basePath)
@@ -595,6 +600,7 @@ server URL with no token needed.`,
 	cmd.Flags().StringVar(&basePath, "base-path", "/mcp", "HTTP endpoint path")
 	cmd.Flags().StringVar(&clientID, "client-id", "", "GitLab OAuth application ID (enables per-user OAuth)")
 	cmd.Flags().StringVar(&gitlabHost, "gitlab-host", "", "GitLab hostname for OAuth (default: from config)")
+	cmd.Flags().StringVar(&externalURL, "external-url", "", "Public base URL for OAuth callbacks (e.g. https://mcp.example.com)")
 
 	return cmd
 }
@@ -603,12 +609,20 @@ server URL with no token needed.`,
 func serveHTTP(f *cmdutil.Factory, server *mcp.Server, host string, port int, token string, noAuth, stateless bool, basePath string) error {
 	errOut := f.IOStreams.ErrOut
 
-	// Handle authentication token
+	// Handle authentication token — reuse a persisted token when possible
+	// so that MCP clients (e.g. Claude Code) stay authenticated across restarts.
 	if !noAuth && token == "" {
-		var err error
-		token, err = generateToken()
-		if err != nil {
-			return fmt.Errorf("generating auth token: %w", err)
+		if saved := loadMCPToken(); saved != "" {
+			token = saved
+		} else {
+			var err error
+			token, err = generateToken()
+			if err != nil {
+				return fmt.Errorf("generating auth token: %w", err)
+			}
+			if err := saveMCPToken(token); err != nil {
+				_, _ = fmt.Fprintf(errOut, "Warning: could not persist token: %v\n", err)
+			}
 		}
 	}
 
@@ -693,6 +707,30 @@ func generateToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// mcpTokenPath returns the path to the persisted MCP bearer token file.
+func mcpTokenPath() string {
+	return filepath.Join(config.ConfigDir(), "mcp_token")
+}
+
+// loadMCPToken reads a previously saved MCP bearer token from disk.
+// Returns empty string if no token file exists.
+func loadMCPToken() string {
+	data, err := os.ReadFile(mcpTokenPath())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// saveMCPToken persists the MCP bearer token to disk so it survives restarts.
+func saveMCPToken(token string) error {
+	dir := config.ConfigDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
+	return os.WriteFile(mcpTokenPath(), []byte(token+"\n"), 0o600)
 }
 
 // --- Per-user OAuth session management (MCP spec-compliant) ---
@@ -879,7 +917,7 @@ func newUserFactory(sess *mcpSession, parentFactory *cmdutil.Factory) *cmdutil.F
 }
 
 // serveHTTPOAuth starts the MCP server with MCP spec-compliant OAuth proxy.
-func serveHTTPOAuth(f *cmdutil.Factory, host string, port int, clientID, gitlabHost string, stateless bool, basePath string) error {
+func serveHTTPOAuth(f *cmdutil.Factory, host string, port int, clientID, gitlabHost string, stateless bool, basePath, externalURL string) error {
 	errOut := f.IOStreams.ErrOut
 
 	if gitlabHost == "" {
@@ -888,6 +926,9 @@ func serveHTTPOAuth(f *cmdutil.Factory, host string, port int, clientID, gitlabH
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	baseURL := fmt.Sprintf("http://%s", addr)
+	if externalURL != "" {
+		baseURL = strings.TrimRight(externalURL, "/")
+	}
 	gitlabCallbackURI := baseURL + "/auth/redirect"
 
 	store := newSessionStore()
