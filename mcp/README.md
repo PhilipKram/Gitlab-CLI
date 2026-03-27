@@ -290,10 +290,11 @@ glab mcp serve --transport http --no-auth
 | `--transport` | `stdio` | Transport: `stdio` or `http` |
 | `--host` | `localhost` | HTTP listen address |
 | `--port` | `8080` | HTTP listen port |
-| `--token` | `""` | Bearer token (auto-generated if empty) |
+| `--token` | `""` | Bearer token (auto-generated and persisted if empty) |
 | `--no-auth` | `false` | Disable bearer token authentication |
 | `--stateless` | `false` | Stateless HTTP mode |
 | `--base-path` | `/mcp` | HTTP endpoint path |
+| `--external-url` | `""` | Public base URL for OAuth callbacks (e.g. `https://mcp.example.com`) |
 
 ### Authentication
 
@@ -303,6 +304,8 @@ The HTTP server supports two authentication modes:
 
 A single bearer token shared by all clients. If you don't provide one via `--token`, a random 64-character hex token is generated and printed to stderr on startup.
 
+The token is automatically persisted to `~/.config/glab/mcp_token` so that clients (e.g. Claude Code) stay authenticated across server restarts. On subsequent starts the saved token is reused instead of generating a new one.
+
 ```
 Authorization: Bearer <token>
 ```
@@ -310,10 +313,14 @@ Authorization: Bearer <token>
 #### Per-User OAuth
 
 When `--client-id` is provided, each user authenticates individually via GitLab OAuth.
-This requires a [GitLab OAuth application](https://docs.gitlab.com/ee/integration/oauth_provider.html) configured with the redirect URI `http://<server-host>:<port>/oauth/callback`.
+This requires a [GitLab OAuth application](https://docs.gitlab.com/ee/integration/oauth_provider.html) configured with the redirect URI `http://<server-host>:<port>/auth/redirect`.
 
 ```bash
 glab mcp serve --transport http --client-id <app-id> --gitlab-host gitlab.example.com
+
+# Behind a reverse proxy, set the external URL so callbacks resolve correctly
+glab mcp serve --transport http --client-id <app-id> --gitlab-host gitlab.example.com \
+  --external-url https://mcp.example.com
 ```
 
 **Flow:**
@@ -331,13 +338,30 @@ Each user gets their own GitLab API client scoped to their OAuth token. The MCP 
 | `--client-id` | `""` | GitLab OAuth application ID (enables per-user OAuth) |
 | `--gitlab-host` | from config | GitLab hostname for OAuth |
 
+### Docker Deployment
+
+Build and run the MCP server as a Docker container:
+
+```bash
+# Build the image
+docker build -t glab-mcp .
+
+# Run with shared token auth
+docker run -p 8080:8080 \
+  -e GITLAB_TOKEN=glpat-xxxxxxxxxxxx \
+  glab-mcp serve --transport http --host 0.0.0.0 --token my-secret
+
+# Run with per-user OAuth
+docker run -p 8080:8080 \
+  glab-mcp serve --transport http --host 0.0.0.0 \
+  --client-id my-oauth-app-id \
+  --gitlab-host gitlab.example.com \
+  --external-url https://mcp.example.com
+```
+
 ### Reverse Proxy
 
-For production deployments, consider running behind a reverse proxy (e.g., nginx, Caddy) that provides:
-- TLS termination (the MCP server itself serves plain HTTP)
-- Rate limiting
-- Access logging
-- Additional authentication layers
+For production deployments, run behind a reverse proxy (e.g., nginx, Caddy) that provides TLS termination, rate limiting, and access logging. Use `--external-url` so OAuth callbacks resolve to the public hostname.
 
 Example nginx config snippet:
 ```nginx
@@ -348,6 +372,22 @@ location /mcp {
     proxy_buffering off;           # required for SSE
     proxy_cache off;
     proxy_read_timeout 86400s;     # long timeout for SSE streams
+}
+
+# Forward OAuth endpoints when using --client-id
+location /oauth {
+    proxy_pass http://127.0.0.1:8080/oauth;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+location /auth {
+    proxy_pass http://127.0.0.1:8080/auth;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+location /.well-known {
+    proxy_pass http://127.0.0.1:8080/.well-known;
+    proxy_set_header Host $host;
 }
 ```
 

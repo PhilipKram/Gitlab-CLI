@@ -649,6 +649,7 @@
                     <li><a href="#commands" class="nav-link" data-nav>Commands</a></li>
                     <li><a href="#examples" class="nav-link" data-nav>Examples</a></li>
                     <li><a href="#config" class="nav-link" data-nav>Config</a></li>
+                    <li><a href="#remote-mcp" class="nav-link" data-nav>Remote MCP</a></li>
                 </ul>
                 <a href="https://github.com/PhilipKram/Gitlab-CLI" class="nav-cta" target="_blank" rel="noopener">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
@@ -672,6 +673,7 @@
             <a href="#commands" class="nav-mobile-link" data-mobile-link>Commands</a>
             <a href="#examples" class="nav-mobile-link" data-mobile-link>Examples</a>
             <a href="#config" class="nav-mobile-link" data-mobile-link>Config</a>
+            <a href="#remote-mcp" class="nav-mobile-link" data-mobile-link>Remote MCP</a>
             <a href="https://github.com/PhilipKram/Gitlab-CLI" class="nav-mobile-cta" target="_blank" rel="noopener">
                 <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
                 GitHub
@@ -1421,6 +1423,203 @@
 
 <span class="cm"># Store custom OAuth scopes</span>
 <span class="cmd">glab config set oauth_scopes "api read_user write_repository" --host gitlab.example.com</span></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== REMOTE MCP SERVER ==================== -->
+        <section class="section" id="remote-mcp">
+            <div class="section-label reveal">Remote MCP Server</div>
+            <h2 class="section-title reveal">Expose GitLab tools over HTTP</h2>
+            <p class="section-desc reveal">
+                Run the MCP server as a standalone HTTP service so remote AI clients can connect over the network.
+                Supports shared-token auth, per-user OAuth, persistent tokens across restarts, Docker deployment, and reverse proxy setups.
+            </p>
+
+            <!-- Quick start -->
+            <div class="code-block reveal" style="margin-top: var(--sp-8);">
+                <div class="code-header">
+                    <div class="code-dots"><div class="code-dot"></div><div class="code-dot"></div><div class="code-dot"></div></div>
+                    <div class="code-header-right">
+                        <span class="code-filename">quick start</span>
+                        <button class="copy-btn" data-copy-code="remote-mcp-quick" title="Copy code">
+                            <svg class="icon-clipboard" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                            <svg class="icon-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            <span class="copy-tooltip">Copied!</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="code-content" id="remote-mcp-quick">
+<pre><span class="cm"># Start HTTP server (auto-generates a bearer token, printed to stderr)</span>
+<span class="cmd">glab mcp serve --transport http</span>
+
+<span class="cm"># Custom host, port, and token</span>
+<span class="cmd">glab mcp serve --transport http --host 0.0.0.0 --port 9090 --token my-secret</span>
+
+<span class="cm"># Stateless mode (simpler, no session tracking)</span>
+<span class="cmd">glab mcp serve --transport http --stateless</span>
+
+<span class="cm"># Register the remote server with Claude Code</span>
+<span class="cmd">glab mcp install --transport http --host myserver.example.com --port 8080 --token my-secret</span></pre>
+                </div>
+            </div>
+
+            <!-- Auth modes -->
+            <h3 class="section-title reveal" style="font-size: var(--text-2xl); margin-top: var(--sp-16);">Authentication modes</h3>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); margin-top: var(--sp-6);" class="reveal">
+                <div class="glass-card config-card">
+                    <h3 class="config-title">Shared Token (default)</h3>
+                    <p style="font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--sp-4);">
+                        A single bearer token shared by all clients. If you omit <code style="color: var(--accent);">--token</code>, a random 64-character hex token is generated and printed to stderr.
+                        The token is persisted to <code style="color: var(--accent);">~/.config/glab/mcp_token</code> so clients stay authenticated across server restarts.
+                    </p>
+                    <code style="font-size: var(--text-xs); color: var(--text-muted); display: block;">Authorization: Bearer &lt;token&gt;</code>
+                </div>
+                <div class="glass-card config-card">
+                    <h3 class="config-title">Per-User OAuth</h3>
+                    <p style="font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--sp-4);">
+                        When <code style="color: var(--accent);">--client-id</code> is set, each user authenticates individually via GitLab OAuth.
+                        The server implements the MCP authorization spec (RFC 8414, dynamic client registration, PKCE).
+                        MCP clients like Claude Code handle the flow automatically.
+                    </p>
+                    <code style="font-size: var(--text-xs); color: var(--text-muted); display: block;">glab mcp serve --transport http --client-id &lt;app-id&gt;</code>
+                </div>
+            </div>
+
+            <!-- Per-user OAuth flow -->
+            <div class="code-block reveal" style="margin-top: var(--sp-8);">
+                <div class="code-header">
+                    <div class="code-dots"><div class="code-dot"></div><div class="code-dot"></div><div class="code-dot"></div></div>
+                    <div class="code-header-right">
+                        <span class="code-filename">per-user OAuth setup</span>
+                        <button class="copy-btn" data-copy-code="remote-mcp-oauth" title="Copy code">
+                            <svg class="icon-clipboard" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                            <svg class="icon-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            <span class="copy-tooltip">Copied!</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="code-content" id="remote-mcp-oauth">
+<pre><span class="cm"># 1. Create a GitLab OAuth application with redirect URI:</span>
+<span class="cm">#    http://&lt;server-host&gt;:&lt;port&gt;/auth/redirect</span>
+
+<span class="cm"># 2. Start the server with your OAuth app ID</span>
+<span class="cmd">glab mcp serve --transport http \
+  --client-id my-oauth-app-id \
+  --gitlab-host gitlab.example.com</span>
+
+<span class="cm"># 3. Behind a reverse proxy? Set the external URL for correct callbacks</span>
+<span class="cmd">glab mcp serve --transport http \
+  --client-id my-oauth-app-id \
+  --gitlab-host gitlab.example.com \
+  --external-url https://mcp.example.com</span>
+
+<span class="cm"># Each user's GitLab API calls use their own OAuth token and permissions</span></pre>
+                </div>
+            </div>
+
+            <!-- Flags table -->
+            <div class="glass-card config-card reveal" style="margin-top: var(--sp-8);">
+                <h3 class="config-title">HTTP Transport Flags</h3>
+                <table class="config-table">
+                    <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+                    <tbody>
+                        <tr><td>--transport</td><td>stdio</td><td>Transport mode: stdio or http</td></tr>
+                        <tr><td>--host</td><td>localhost</td><td>HTTP listen address</td></tr>
+                        <tr><td>--port</td><td>8080</td><td>HTTP listen port</td></tr>
+                        <tr><td>--token</td><td>(auto)</td><td>Bearer token (auto-generated and persisted if empty)</td></tr>
+                        <tr><td>--no-auth</td><td>false</td><td>Disable bearer token authentication</td></tr>
+                        <tr><td>--stateless</td><td>false</td><td>Stateless HTTP mode (no session tracking)</td></tr>
+                        <tr><td>--base-path</td><td>/mcp</td><td>HTTP endpoint path</td></tr>
+                        <tr><td>--client-id</td><td></td><td>GitLab OAuth application ID (enables per-user OAuth)</td></tr>
+                        <tr><td>--gitlab-host</td><td>from config</td><td>GitLab hostname for OAuth</td></tr>
+                        <tr><td>--external-url</td><td></td><td>Public base URL for OAuth callbacks behind a reverse proxy</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Docker deployment -->
+            <h3 class="section-title reveal" style="font-size: var(--text-2xl); margin-top: var(--sp-16);">Docker deployment</h3>
+            <p class="section-desc reveal" style="margin-bottom: var(--sp-6);">
+                Deploy the remote MCP server as a Docker container for production environments.
+            </p>
+
+            <div class="code-block reveal">
+                <div class="code-header">
+                    <div class="code-dots"><div class="code-dot"></div><div class="code-dot"></div><div class="code-dot"></div></div>
+                    <div class="code-header-right">
+                        <span class="code-filename">Docker</span>
+                        <button class="copy-btn" data-copy-code="remote-mcp-docker" title="Copy code">
+                            <svg class="icon-clipboard" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                            <svg class="icon-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            <span class="copy-tooltip">Copied!</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="code-content" id="remote-mcp-docker">
+<pre><span class="cm"># Build the Docker image</span>
+<span class="cmd">docker build -t glab-mcp .</span>
+
+<span class="cm"># Run with shared token auth</span>
+<span class="cmd">docker run -p 8080:8080 \
+  -e GITLAB_TOKEN=glpat-xxxxxxxxxxxx \
+  glab-mcp serve --transport http --host 0.0.0.0 --token my-secret</span>
+
+<span class="cm"># Run with per-user OAuth</span>
+<span class="cmd">docker run -p 8080:8080 \
+  glab-mcp serve --transport http --host 0.0.0.0 \
+  --client-id my-oauth-app-id \
+  --gitlab-host gitlab.example.com \
+  --external-url https://mcp.example.com</span></pre>
+                </div>
+            </div>
+
+            <!-- Reverse proxy -->
+            <h3 class="section-title reveal" style="font-size: var(--text-2xl); margin-top: var(--sp-16);">Reverse proxy</h3>
+            <p class="section-desc reveal" style="margin-bottom: var(--sp-6);">
+                For production deployments, run behind a reverse proxy that provides TLS termination, rate limiting, and access logging.
+                Use <code style="color: var(--accent);">--external-url</code> so OAuth callbacks resolve to the public hostname.
+            </p>
+
+            <div class="code-block reveal">
+                <div class="code-header">
+                    <div class="code-dots"><div class="code-dot"></div><div class="code-dot"></div><div class="code-dot"></div></div>
+                    <div class="code-header-right">
+                        <span class="code-filename">nginx.conf</span>
+                        <button class="copy-btn" data-copy-code="remote-mcp-nginx" title="Copy code">
+                            <svg class="icon-clipboard" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                            <svg class="icon-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            <span class="copy-tooltip">Copied!</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="code-content" id="remote-mcp-nginx">
+<pre><span class="cm"># Proxy all MCP traffic (including SSE streams and OAuth endpoints)</span>
+location /mcp {
+    proxy_pass http://127.0.0.1:8080/mcp;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_buffering off;           <span class="cm"># required for SSE</span>
+    proxy_cache off;
+    proxy_read_timeout 86400s;     <span class="cm"># long timeout for SSE streams</span>
+}
+
+<span class="cm"># Forward OAuth endpoints when using --client-id</span>
+location /oauth {
+    proxy_pass http://127.0.0.1:8080/oauth;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+location /auth {
+    proxy_pass http://127.0.0.1:8080/auth;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+location /.well-known {
+    proxy_pass http://127.0.0.1:8080/.well-known;
+    proxy_set_header Host $host;
+}</pre>
                 </div>
             </div>
         </section>
