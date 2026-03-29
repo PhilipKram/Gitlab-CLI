@@ -1561,14 +1561,14 @@
 <pre><span class="cm"># Build the Docker image</span>
 <span class="cmd">docker build -t glab-mcp .</span>
 
-<span class="cm"># Run with shared token auth</span>
-<span class="cmd">docker run -p 8080:8080 \
+<span class="cm"># Run with shared token auth (-v persists credentials across restarts)</span>
+<span class="cmd">docker run -p 8080:8080 -v glab-mcp-data:/config \
   -e GITLAB_TOKEN=glpat-xxxxxxxxxxxx \
-  glab-mcp serve --transport http --host 0.0.0.0 --token my-secret</span>
+  glab-mcp --token my-secret</span>
 
 <span class="cm"># Run with per-user OAuth</span>
-<span class="cmd">docker run -p 8080:8080 \
-  glab-mcp serve --transport http --host 0.0.0.0 \
+<span class="cmd">docker run -p 8080:8080 -v glab-mcp-data:/config \
+  glab-mcp \
   --client-id my-oauth-app-id \
   --gitlab-host gitlab.example.com \
   --external-url https://mcp.example.com</span></pre>

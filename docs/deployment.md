@@ -85,6 +85,7 @@ docker build -t glab-mcp .
 # --- Shared token mode ---
 docker run -d --name glab-mcp \
   -p 8080:8080 \
+  -v glab-mcp-data:/config \
   -e GITLAB_TOKEN=glpat-xxxxxxxxxxxx \
   --restart unless-stopped \
   glab-mcp --token <bearer-secret>
@@ -92,6 +93,7 @@ docker run -d --name glab-mcp \
 # --- Per-user OAuth mode ---
 docker run -d --name glab-mcp \
   -p 8080:8080 \
+  -v glab-mcp-data:/config \
   --restart unless-stopped \
   glab-mcp \
     --client-id <gitlab-oauth-app-id> \
@@ -99,6 +101,7 @@ docker run -d --name glab-mcp \
     --external-url https://mcp.example.com
 ```
 
+The `-v glab-mcp-data:/config` mount persists bearer tokens and OAuth sessions across container restarts.
 The image is ~20 MB (scratch base, static binary, TLS certs only).
 
 ### 2. Docker Compose
@@ -110,6 +113,8 @@ services:
     build: .
     ports:
       - "8080:8080"
+    volumes:
+      - glab-mcp-data:/config
     environment:
       GITLAB_TOKEN: glpat-xxxxxxxxxxxx    # shared token mode only
     command:
@@ -122,6 +127,8 @@ services:
         limits:
           cpus: "0.5"
           memory: 256M
+volumes:
+  glab-mcp-data:
 ```
 
 ### 3. Kubernetes

@@ -346,14 +346,14 @@ Build and run the MCP server as a Docker container:
 # Build the image
 docker build -t glab-mcp .
 
-# Run with shared token auth
-docker run -p 8080:8080 \
+# Run with shared token auth (-v persists credentials across restarts)
+docker run -p 8080:8080 -v glab-mcp-data:/config \
   -e GITLAB_TOKEN=glpat-xxxxxxxxxxxx \
-  glab-mcp serve --transport http --host 0.0.0.0 --token my-secret
+  glab-mcp --token my-secret
 
 # Run with per-user OAuth
-docker run -p 8080:8080 \
-  glab-mcp serve --transport http --host 0.0.0.0 \
+docker run -p 8080:8080 -v glab-mcp-data:/config \
+  glab-mcp \
   --client-id my-oauth-app-id \
   --gitlab-host gitlab.example.com \
   --external-url https://mcp.example.com
