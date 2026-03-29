@@ -12,6 +12,7 @@ import (
 	"github.com/PhilipKram/gitlab-cli/internal/git"
 	"github.com/PhilipKram/gitlab-cli/pkg/iostreams"
 	"github.com/spf13/cobra"
+	gitlab "gitlab.com/gitlab-org/api/client-go"
 )
 
 // TestIO captures stdout, stderr, and provides stdin for command testing.
@@ -93,8 +94,8 @@ func NewTestFactory(t *testing.T) *TestFactory {
 		if tf.Client != nil {
 			return tf.Client, nil
 		}
-		// Return a default client if none is set
-		return api.NewClient("gitlab.com")
+		// Return a client with retries disabled so error tests run fast
+		return api.NewClientWithToken("gitlab.com", "test-token-12345", gitlab.WithCustomRetryMax(0))
 	}
 
 	tf.Factory.Remote = func() (*git.Remote, error) {

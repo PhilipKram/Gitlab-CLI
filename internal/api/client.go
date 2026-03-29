@@ -55,7 +55,8 @@ func NewClient(host string) (*Client, error) {
 }
 
 // NewClientWithToken creates a new GitLab API client with the given token.
-func NewClientWithToken(host, token string) (*Client, error) {
+// Optional gitlab.ClientOptionFunc values are appended after the defaults.
+func NewClientWithToken(host, token string, opts ...gitlab.ClientOptionFunc) (*Client, error) {
 	baseURL := APIURL(host)
 	// Create client with appropriate HTTP client
 	// Use http.DefaultTransport as base to allow test mocking via InterceptTransport
@@ -64,10 +65,12 @@ func NewClientWithToken(host, token string) (*Client, error) {
 	if errors.IsVerboseMode() {
 		httpClient := errors.NewLoggingHTTPClient()
 		httpClient.Transport = &RateLimitTransport{Base: httpClient.Transport}
-		client, err = gitlab.NewClient(token, gitlab.WithBaseURL(baseURL), gitlab.WithHTTPClient(httpClient))
+		baseOpts := []gitlab.ClientOptionFunc{gitlab.WithBaseURL(baseURL), gitlab.WithHTTPClient(httpClient)}
+		client, err = gitlab.NewClient(token, append(baseOpts, opts...)...)
 	} else {
 		httpClient := &http.Client{Transport: &RateLimitTransport{Base: http.DefaultTransport}}
-		client, err = gitlab.NewClient(token, gitlab.WithBaseURL(baseURL), gitlab.WithHTTPClient(httpClient))
+		baseOpts := []gitlab.ClientOptionFunc{gitlab.WithBaseURL(baseURL), gitlab.WithHTTPClient(httpClient)}
+		client, err = gitlab.NewClient(token, append(baseOpts, opts...)...)
 	}
 
 	if err != nil {
@@ -87,7 +90,8 @@ func NewClientWithToken(host, token string) (*Client, error) {
 }
 
 // NewOAuthClient creates a new GitLab API client using an OAuth token.
-func NewOAuthClient(host, token string) (*Client, error) {
+// Optional gitlab.ClientOptionFunc values are appended after the defaults.
+func NewOAuthClient(host, token string, opts ...gitlab.ClientOptionFunc) (*Client, error) {
 	baseURL := APIURL(host)
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 
@@ -97,10 +101,12 @@ func NewOAuthClient(host, token string) (*Client, error) {
 	if errors.IsVerboseMode() {
 		httpClient := errors.NewLoggingHTTPClient()
 		httpClient.Transport = &RateLimitTransport{Base: httpClient.Transport}
-		client, err = gitlab.NewAuthSourceClient(gitlab.OAuthTokenSource{TokenSource: ts}, gitlab.WithBaseURL(baseURL), gitlab.WithHTTPClient(httpClient))
+		baseOpts := []gitlab.ClientOptionFunc{gitlab.WithBaseURL(baseURL), gitlab.WithHTTPClient(httpClient)}
+		client, err = gitlab.NewAuthSourceClient(gitlab.OAuthTokenSource{TokenSource: ts}, append(baseOpts, opts...)...)
 	} else {
 		httpClient := &http.Client{Transport: &RateLimitTransport{Base: http.DefaultTransport}}
-		client, err = gitlab.NewAuthSourceClient(gitlab.OAuthTokenSource{TokenSource: ts}, gitlab.WithBaseURL(baseURL), gitlab.WithHTTPClient(httpClient))
+		baseOpts := []gitlab.ClientOptionFunc{gitlab.WithBaseURL(baseURL), gitlab.WithHTTPClient(httpClient)}
+		client, err = gitlab.NewAuthSourceClient(gitlab.OAuthTokenSource{TokenSource: ts}, append(baseOpts, opts...)...)
 	}
 
 	if err != nil {
