@@ -758,13 +758,13 @@ func saveMCPToken(token string) error {
 
 // mcpSession represents an authenticated user's session.
 type mcpSession struct {
-	BearerToken    string
-	GitLabHost     string
-	AccessToken    string
-	RefreshToken   string
-	TokenExpiresAt int64
-	ClientID       string
-	Username       string
+	BearerToken    string `json:"bearer_token"`
+	GitLabHost     string `json:"gitlab_host"`
+	AccessToken    string `json:"access_token"`
+	RefreshToken   string `json:"refresh_token"`
+	TokenExpiresAt int64  `json:"token_expires_at"`
+	ClientID       string `json:"client_id"`
+	Username       string `json:"username,omitempty"`
 }
 
 // oauthRegisteredClient represents a dynamically registered OAuth client.
@@ -804,21 +804,74 @@ type oauthAuthCode struct {
 }
 
 // mcpSessionStore manages OAuth clients, auth requests, codes, and sessions.
+// Sessions and registered clients are persisted to disk so they survive restarts.
 type mcpSessionStore struct {
 	mu        sync.RWMutex
 	sessions  map[string]*mcpSession           // bearer token → session
 	clients   map[string]*oauthRegisteredClient // client_id → client
-	pending   map[string]*oauthAuthRequest      // gitlab state → auth request
-	codes     map[string]*oauthAuthCode         // auth code → code info
+	pending   map[string]*oauthAuthRequest      // gitlab state → auth request (ephemeral)
+	codes     map[string]*oauthAuthCode         // auth code → code info (ephemeral)
+}
+
+// mcpSessionsFile is the on-disk format for persisted session store data.
+type mcpSessionsFile struct {
+	Sessions []*mcpSession            `json:"sessions"`
+	Clients  []*oauthRegisteredClient `json:"clients,omitempty"`
+}
+
+func mcpSessionsPath() string {
+	return filepath.Join(config.ConfigDir(), "mcp_sessions.json")
 }
 
 func newSessionStore() *mcpSessionStore {
-	return &mcpSessionStore{
+	s := &mcpSessionStore{
 		sessions: make(map[string]*mcpSession),
 		clients:  make(map[string]*oauthRegisteredClient),
 		pending:  make(map[string]*oauthAuthRequest),
 		codes:    make(map[string]*oauthAuthCode),
 	}
+	s.loadFromDisk()
+	return s
+}
+
+// loadFromDisk restores persisted sessions and clients.
+func (s *mcpSessionStore) loadFromDisk() {
+	data, err := os.ReadFile(mcpSessionsPath())
+	if err != nil {
+		return
+	}
+	var file mcpSessionsFile
+	if err := json.Unmarshal(data, &file); err != nil {
+		return
+	}
+	for _, sess := range file.Sessions {
+		if sess.BearerToken != "" {
+			s.sessions[sess.BearerToken] = sess
+		}
+	}
+	for _, c := range file.Clients {
+		if c.ClientID != "" {
+			s.clients[c.ClientID] = c
+		}
+	}
+}
+
+// saveToDisk persists sessions and clients. Must be called with mu held.
+func (s *mcpSessionStore) saveToDisk() {
+	file := mcpSessionsFile{}
+	for _, sess := range s.sessions {
+		file.Sessions = append(file.Sessions, sess)
+	}
+	for _, c := range s.clients {
+		file.Clients = append(file.Clients, c)
+	}
+	data, err := json.MarshalIndent(file, "", "  ")
+	if err != nil {
+		return
+	}
+	dir := config.ConfigDir()
+	_ = os.MkdirAll(dir, 0o755)
+	_ = os.WriteFile(mcpSessionsPath(), data, 0o600)
 }
 
 func (s *mcpSessionStore) getSession(bearerToken string) *mcpSession {
@@ -831,12 +884,14 @@ func (s *mcpSessionStore) addSession(sess *mcpSession) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[sess.BearerToken] = sess
+	s.saveToDisk()
 }
 
 func (s *mcpSessionStore) addClient(c *oauthRegisteredClient) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clients[c.ClientID] = c
+	s.saveToDisk()
 }
 
 func (s *mcpSessionStore) getClient(clientID string) *oauthRegisteredClient {
