@@ -10,6 +10,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -758,13 +759,15 @@ func saveMCPToken(token string) error {
 
 // mcpSession represents an authenticated user's session.
 type mcpSession struct {
-	BearerToken    string `json:"bearer_token"`
-	GitLabHost     string `json:"gitlab_host"`
-	AccessToken    string `json:"access_token"`
-	RefreshToken   string `json:"refresh_token"`
-	TokenExpiresAt int64  `json:"token_expires_at"`
-	ClientID       string `json:"client_id"`
-	Username       string `json:"username,omitempty"`
+	BearerToken      string `json:"bearer_token"`
+	GitLabHost       string `json:"gitlab_host"`
+	AccessToken      string `json:"access_token"`
+	RefreshToken     string `json:"refresh_token"`
+	TokenExpiresAt   int64  `json:"token_expires_at"`
+	ClientID         string `json:"client_id"`
+	GitLabClientID   string `json:"gitlab_client_id,omitempty"` // GitLab OAuth app ID (for token refresh)
+	GitLabRedirectURI string `json:"gitlab_redirect_uri,omitempty"`
+	Username         string `json:"username,omitempty"`
 }
 
 // oauthRegisteredClient represents a dynamically registered OAuth client.
@@ -876,8 +879,78 @@ func (s *mcpSessionStore) saveToDisk() {
 
 func (s *mcpSessionStore) getSession(bearerToken string) *mcpSession {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.sessions[bearerToken]
+	sess := s.sessions[bearerToken]
+	s.mu.RUnlock()
+	if sess == nil {
+		return nil
+	}
+	// Auto-refresh if the GitLab token expires within 5 minutes
+	if sess.TokenExpiresAt > 0 && time.Now().Unix() > sess.TokenExpiresAt-300 {
+		if err := s.refreshSession(sess); err != nil {
+			// If token is already expired and refresh failed, drop the session
+			if time.Now().Unix() >= sess.TokenExpiresAt {
+				return nil
+			}
+			// Not yet expired, return the stale session and hope for the best
+		}
+	}
+	return sess
+}
+
+// refreshSession uses the stored refresh token to obtain a new GitLab access token.
+func (s *mcpSessionStore) refreshSession(sess *mcpSession) error {
+	if sess.RefreshToken == "" || sess.GitLabClientID == "" {
+		return fmt.Errorf("no refresh token or client ID available")
+	}
+
+	tokenURL := fmt.Sprintf("https://%s/oauth/token", sess.GitLabHost)
+	data := url.Values{
+		"client_id":     {sess.GitLabClientID},
+		"refresh_token": {sess.RefreshToken},
+		"grant_type":    {"refresh_token"},
+	}
+	if sess.GitLabRedirectURI != "" {
+		data.Set("redirect_uri", sess.GitLabRedirectURI)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.PostForm(tokenURL, data)
+	if err != nil {
+		return fmt.Errorf("requesting token refresh: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading token refresh response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("token refresh failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp auth.OAuthTokenResponse
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return fmt.Errorf("parsing token refresh response: %w", err)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sess.AccessToken = tokenResp.AccessToken
+	if tokenResp.RefreshToken != "" {
+		sess.RefreshToken = tokenResp.RefreshToken
+	}
+	createdAt := tokenResp.CreatedAt
+	if createdAt == 0 {
+		createdAt = time.Now().Unix()
+	}
+	if tokenResp.ExpiresIn > 0 {
+		sess.TokenExpiresAt = createdAt + int64(tokenResp.ExpiresIn)
+	}
+
+	s.saveToDisk()
+	return nil
 }
 
 func (s *mcpSessionStore) addSession(sess *mcpSession) {
@@ -1020,7 +1093,7 @@ func serveHTTPOAuth(f *cmdutil.Factory, host string, port int, clientID, gitlabH
 	mux.HandleFunc("/auth/redirect", oauthGitLabCallbackHandler(store, gitlabHost, clientID, gitlabCallbackURI, errOut))
 
 	// Token endpoint — exchanges our auth code for a session token
-	mux.HandleFunc("/oauth/token", oauthTokenHandler(store, gitlabHost, errOut))
+	mux.HandleFunc("/oauth/token", oauthTokenHandler(store, gitlabHost, clientID, gitlabCallbackURI, errOut))
 
 	httpServer := &http.Server{
 		Addr:              addr,
@@ -1268,7 +1341,7 @@ func oauthGitLabCallbackHandler(store *mcpSessionStore, gitlabHost, gitlabClient
 }
 
 // oauthTokenHandler exchanges our auth code for a session access token.
-func oauthTokenHandler(store *mcpSessionStore, gitlabHost string, errOut io.Writer) http.HandlerFunc {
+func oauthTokenHandler(store *mcpSessionStore, gitlabHost, gitlabClientID, gitlabCallbackURI string, errOut io.Writer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -1325,12 +1398,14 @@ func oauthTokenHandler(store *mcpSessionStore, gitlabHost string, errOut io.Writ
 		}
 
 		store.addSession(&mcpSession{
-			BearerToken:    sessionToken,
-			GitLabHost:     gitlabHost,
-			AccessToken:    ac.GitLabAccessToken,
-			RefreshToken:   ac.GitLabRefreshToken,
-			TokenExpiresAt: ac.GitLabExpiresAt,
-			ClientID:       clientID,
+			BearerToken:       sessionToken,
+			GitLabHost:        gitlabHost,
+			AccessToken:       ac.GitLabAccessToken,
+			RefreshToken:      ac.GitLabRefreshToken,
+			TokenExpiresAt:    ac.GitLabExpiresAt,
+			ClientID:          clientID,
+			GitLabClientID:    gitlabClientID,
+			GitLabRedirectURI: gitlabCallbackURI,
 		})
 
 		_, _ = fmt.Fprintf(errOut, "New OAuth session created for client %s\n", clientID)

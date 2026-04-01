@@ -968,7 +968,7 @@ func TestOAuthGitLabCallbackHandler_OAuthError(t *testing.T) {
 
 func TestOAuthTokenHandler_InvalidGrant(t *testing.T) {
 	store := newSessionStore()
-	handler := oauthTokenHandler(store, "gitlab.com", io.Discard)
+	handler := oauthTokenHandler(store, "gitlab.com", "test-gitlab-app-id", "http://localhost/auth/redirect", io.Discard)
 
 	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader("grant_type=client_credentials"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -982,7 +982,7 @@ func TestOAuthTokenHandler_InvalidGrant(t *testing.T) {
 
 func TestOAuthTokenHandler_InvalidCode(t *testing.T) {
 	store := newSessionStore()
-	handler := oauthTokenHandler(store, "gitlab.com", io.Discard)
+	handler := oauthTokenHandler(store, "gitlab.com", "test-gitlab-app-id", "http://localhost/auth/redirect", io.Discard)
 
 	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader("grant_type=authorization_code&code=invalid&client_id=x&redirect_uri=y"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1013,7 +1013,7 @@ func TestOAuthTokenHandler_Success(t *testing.T) {
 		CreatedAt:         time.Now(),
 	})
 
-	handler := oauthTokenHandler(store, "gitlab.com", io.Discard)
+	handler := oauthTokenHandler(store, "gitlab.com", "test-gitlab-app-id", "http://localhost/auth/redirect", io.Discard)
 
 	body := fmt.Sprintf("grant_type=authorization_code&code=valid-code&client_id=client-123&redirect_uri=http://localhost/callback&code_verifier=%s", verifier)
 	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(body))
