@@ -757,17 +757,24 @@ func saveMCPToken(token string) error {
 // 11. Server returns a session access token
 // 12. Client uses session token for /mcp requests
 
+// defaultTokenExpiry is the lifetime (in seconds) advertised to MCP clients
+// via the expires_in field. A long expiry minimises re-authentication prompts
+// across Claude Code sessions. The server still refreshes the underlying
+// GitLab token proactively.
+const defaultTokenExpiry = 30 * 24 * 3600 // 30 days
+
 // mcpSession represents an authenticated user's session.
 type mcpSession struct {
-	BearerToken      string `json:"bearer_token"`
-	GitLabHost       string `json:"gitlab_host"`
-	AccessToken      string `json:"access_token"`
-	RefreshToken     string `json:"refresh_token"`
-	TokenExpiresAt   int64  `json:"token_expires_at"`
-	ClientID         string `json:"client_id"`
-	GitLabClientID   string `json:"gitlab_client_id,omitempty"` // GitLab OAuth app ID (for token refresh)
+	BearerToken       string `json:"bearer_token"`
+	GitLabHost        string `json:"gitlab_host"`
+	AccessToken       string `json:"access_token"`
+	RefreshToken      string `json:"refresh_token"`
+	MCPRefreshToken   string `json:"mcp_refresh_token,omitempty"` // MCP session refresh token
+	TokenExpiresAt    int64  `json:"token_expires_at"`
+	ClientID          string `json:"client_id"`
+	GitLabClientID    string `json:"gitlab_client_id,omitempty"` // GitLab OAuth app ID (for token refresh)
 	GitLabRedirectURI string `json:"gitlab_redirect_uri,omitempty"`
-	Username         string `json:"username,omitempty"`
+	Username          string `json:"username,omitempty"`
 }
 
 // oauthRegisteredClient represents a dynamically registered OAuth client.
@@ -1140,7 +1147,7 @@ func oauthMetadataHandler(baseURL string) http.HandlerFunc {
 		"token_endpoint":                        baseURL + "/oauth/token",
 		"registration_endpoint":                 baseURL + "/oauth/register",
 		"response_types_supported":              []string{"code"},
-		"grant_types_supported":                 []string{"authorization_code"},
+		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"code_challenge_methods_supported":       []string{"S256"},
 		"token_endpoint_auth_methods_supported": []string{"none"},
 	}
@@ -1340,7 +1347,8 @@ func oauthGitLabCallbackHandler(store *mcpSessionStore, gitlabHost, gitlabClient
 	}
 }
 
-// oauthTokenHandler exchanges our auth code for a session access token.
+// oauthTokenHandler exchanges our auth code for a session access token,
+// or refreshes an existing session via refresh_token grant.
 func oauthTokenHandler(store *mcpSessionStore, gitlabHost, gitlabClientID, gitlabCallbackURI string, errOut io.Writer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -1353,69 +1361,157 @@ func oauthTokenHandler(store *mcpSessionStore, gitlabHost, gitlabClientID, gitla
 			return
 		}
 
-		grantType := r.FormValue("grant_type")
-		if grantType != "authorization_code" {
-			jsonError(w, "unsupported_grant_type", "Only authorization_code is supported", http.StatusBadRequest)
-			return
+		switch r.FormValue("grant_type") {
+		case "authorization_code":
+			handleAuthCodeGrant(w, r, store, gitlabHost, gitlabClientID, gitlabCallbackURI, errOut)
+		case "refresh_token":
+			handleRefreshGrant(w, r, store, errOut)
+		default:
+			jsonError(w, "unsupported_grant_type", "Supported: authorization_code, refresh_token", http.StatusBadRequest)
 		}
-
-		code := r.FormValue("code")
-		clientID := r.FormValue("client_id")
-		redirectURI := r.FormValue("redirect_uri")
-		codeVerifier := r.FormValue("code_verifier")
-
-		// Look up and consume the auth code
-		ac := store.takeCode(code)
-		if ac == nil {
-			jsonError(w, "invalid_grant", "Invalid or expired authorization code", http.StatusBadRequest)
-			return
-		}
-
-		// Validate client_id and redirect_uri
-		if ac.ClientID != clientID {
-			jsonError(w, "invalid_grant", "client_id mismatch", http.StatusBadRequest)
-			return
-		}
-		if ac.RedirectURI != redirectURI {
-			jsonError(w, "invalid_grant", "redirect_uri mismatch", http.StatusBadRequest)
-			return
-		}
-
-		// Validate PKCE
-		if ac.CodeChallenge != "" {
-			expectedChallenge := auth.GenerateCodeChallenge(codeVerifier)
-			if subtle.ConstantTimeCompare([]byte(expectedChallenge), []byte(ac.CodeChallenge)) != 1 {
-				jsonError(w, "invalid_grant", "PKCE verification failed", http.StatusBadRequest)
-				return
-			}
-		}
-
-		// Generate session token
-		sessionToken, err := generateToken()
-		if err != nil {
-			jsonError(w, "server_error", "Failed to generate token", http.StatusInternalServerError)
-			return
-		}
-
-		store.addSession(&mcpSession{
-			BearerToken:       sessionToken,
-			GitLabHost:        gitlabHost,
-			AccessToken:       ac.GitLabAccessToken,
-			RefreshToken:      ac.GitLabRefreshToken,
-			TokenExpiresAt:    ac.GitLabExpiresAt,
-			ClientID:          clientID,
-			GitLabClientID:    gitlabClientID,
-			GitLabRedirectURI: gitlabCallbackURI,
-		})
-
-		_, _ = fmt.Fprintf(errOut, "New OAuth session created for client %s\n", clientID)
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"access_token": sessionToken,
-			"token_type":   "bearer",
-		})
 	}
+}
+
+// handleAuthCodeGrant handles the authorization_code grant type.
+func handleAuthCodeGrant(w http.ResponseWriter, r *http.Request, store *mcpSessionStore, gitlabHost, gitlabClientID, gitlabCallbackURI string, errOut io.Writer) {
+	code := r.FormValue("code")
+	clientID := r.FormValue("client_id")
+	redirectURI := r.FormValue("redirect_uri")
+	codeVerifier := r.FormValue("code_verifier")
+
+	// Look up and consume the auth code
+	ac := store.takeCode(code)
+	if ac == nil {
+		jsonError(w, "invalid_grant", "Invalid or expired authorization code", http.StatusBadRequest)
+		return
+	}
+
+	// Validate client_id and redirect_uri
+	if ac.ClientID != clientID {
+		jsonError(w, "invalid_grant", "client_id mismatch", http.StatusBadRequest)
+		return
+	}
+	if ac.RedirectURI != redirectURI {
+		jsonError(w, "invalid_grant", "redirect_uri mismatch", http.StatusBadRequest)
+		return
+	}
+
+	// Validate PKCE
+	if ac.CodeChallenge != "" {
+		expectedChallenge := auth.GenerateCodeChallenge(codeVerifier)
+		if subtle.ConstantTimeCompare([]byte(expectedChallenge), []byte(ac.CodeChallenge)) != 1 {
+			jsonError(w, "invalid_grant", "PKCE verification failed", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Generate session token and MCP refresh token
+	sessionToken, err := generateToken()
+	if err != nil {
+		jsonError(w, "server_error", "Failed to generate token", http.StatusInternalServerError)
+		return
+	}
+	mcpRefreshToken, err := generateToken()
+	if err != nil {
+		jsonError(w, "server_error", "Failed to generate refresh token", http.StatusInternalServerError)
+		return
+	}
+
+	store.addSession(&mcpSession{
+		BearerToken:       sessionToken,
+		GitLabHost:        gitlabHost,
+		AccessToken:       ac.GitLabAccessToken,
+		RefreshToken:      ac.GitLabRefreshToken,
+		MCPRefreshToken:   mcpRefreshToken,
+		TokenExpiresAt:    ac.GitLabExpiresAt,
+		ClientID:          clientID,
+		GitLabClientID:    gitlabClientID,
+		GitLabRedirectURI: gitlabCallbackURI,
+	})
+
+	_, _ = fmt.Fprintf(errOut, "New OAuth session created for client %s\n", clientID)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"access_token":  sessionToken,
+		"token_type":    "bearer",
+		"expires_in":    defaultTokenExpiry,
+		"refresh_token": mcpRefreshToken,
+	})
+}
+
+// handleRefreshGrant handles the refresh_token grant type.
+// It refreshes the underlying GitLab token and issues a new MCP session token.
+func handleRefreshGrant(w http.ResponseWriter, r *http.Request, store *mcpSessionStore, errOut io.Writer) {
+	mcpRefreshToken := r.FormValue("refresh_token")
+	if mcpRefreshToken == "" {
+		jsonError(w, "invalid_request", "refresh_token is required", http.StatusBadRequest)
+		return
+	}
+
+	// Find session by MCP refresh token
+	var sess *mcpSession
+	store.mu.RLock()
+	for _, s := range store.sessions {
+		if s.MCPRefreshToken == mcpRefreshToken {
+			sess = s
+			break
+		}
+	}
+	store.mu.RUnlock()
+
+	if sess == nil {
+		jsonError(w, "invalid_grant", "Invalid refresh token", http.StatusBadRequest)
+		return
+	}
+
+	// Refresh the GitLab token
+	if err := store.refreshSession(sess); err != nil {
+		_, _ = fmt.Fprintf(errOut, "GitLab token refresh failed during MCP refresh: %v\n", err)
+		jsonError(w, "invalid_grant", "GitLab token refresh failed — re-authorization required", http.StatusBadRequest)
+		return
+	}
+
+	// Generate new MCP session bearer and refresh tokens
+	newBearer, err := generateToken()
+	if err != nil {
+		jsonError(w, "server_error", "Failed to generate token", http.StatusInternalServerError)
+		return
+	}
+	newMCPRefresh, err := generateToken()
+	if err != nil {
+		jsonError(w, "server_error", "Failed to generate refresh token", http.StatusInternalServerError)
+		return
+	}
+
+	// Remove old session, create new one
+	store.mu.Lock()
+	delete(store.sessions, sess.BearerToken)
+	newSess := &mcpSession{
+		BearerToken:       newBearer,
+		GitLabHost:        sess.GitLabHost,
+		AccessToken:       sess.AccessToken,
+		RefreshToken:      sess.RefreshToken,
+		MCPRefreshToken:   newMCPRefresh,
+		TokenExpiresAt:    sess.TokenExpiresAt,
+		ClientID:          sess.ClientID,
+		GitLabClientID:    sess.GitLabClientID,
+		GitLabRedirectURI: sess.GitLabRedirectURI,
+		Username:          sess.Username,
+	}
+	store.sessions[newBearer] = newSess
+	store.saveToDisk()
+	store.mu.Unlock()
+
+	_, _ = fmt.Fprintf(errOut, "MCP session refreshed for client %s\n", sess.ClientID)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"access_token":  newBearer,
+		"token_type":    "bearer",
+		"expires_in":    defaultTokenExpiry,
+		"refresh_token": newMCPRefresh,
+	})
 }
 
 // jsonError writes an OAuth-compliant JSON error response.
