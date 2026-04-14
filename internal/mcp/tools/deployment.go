@@ -18,8 +18,8 @@ func RegisterDeploymentTools(server *mcp.Server, f *cmdutil.Factory) {
 func registerDeploymentList(server *mcp.Server, f *cmdutil.Factory) {
 	type Input struct {
 		Repo        string `json:"repo,omitempty"        jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
-		Environment string `json:"environment,omitempty" jsonschema:"filter by environment name"`
 		Status      string `json:"status,omitempty"      jsonschema:"filter by status: created, running, success, failed, canceled"`
+		Environment string `json:"environment,omitempty" jsonschema:"filter by environment name"`
 		OrderBy     string `json:"order_by,omitempty"    jsonschema:"order by: id, iid, created_at, updated_at, ref"`
 		Sort        string `json:"sort,omitempty"        jsonschema:"sort order: asc or desc"`
 		Limit       int64  `json:"limit,omitempty"       jsonschema:"maximum number of results (default 30)"`
@@ -36,11 +36,11 @@ func registerDeploymentList(server *mcp.Server, f *cmdutil.Factory) {
 		opts := &gitlab.ListProjectDeploymentsOptions{
 			ListOptions: gitlab.ListOptions{PerPage: clampPerPage(in.Limit)},
 		}
-		if in.Environment != "" {
-			opts.Environment = &in.Environment
-		}
 		if in.Status != "" {
 			opts.Status = &in.Status
+		}
+		if in.Environment != "" {
+			opts.Environment = &in.Environment
 		}
 		if in.OrderBy != "" {
 			opts.OrderBy = &in.OrderBy
@@ -58,8 +58,8 @@ func registerDeploymentList(server *mcp.Server, f *cmdutil.Factory) {
 
 func registerDeploymentView(server *mcp.Server, f *cmdutil.Factory) {
 	type Input struct {
-		Deployment int64  `json:"deployment"     jsonschema:"deployment ID"`
-		Repo       string `json:"repo,omitempty" jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
+		Deployment int64  `json:"deployment" jsonschema:"deployment ID"`
+		Repo string `json:"repo,omitempty" jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
 	}
 
 	mcp.AddTool(server, &mcp.Tool{
