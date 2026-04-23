@@ -252,23 +252,42 @@ func TestBackgroundRefresh_RotatesIdleSessions(t *testing.T) {
 	defer cancel()
 	errOut := &bytes.Buffer{}
 
-	go store.startBackgroundRefresh(ctx, 50*time.Millisecond, 5*time.Minute, errOut)
+	done := make(chan struct{})
+	go func() {
+		store.startBackgroundRefresh(ctx, 50*time.Millisecond, 5*time.Minute, errOut)
+		close(done)
+	}()
 
 	// Wait long enough for at least one tick.
 	waitFor(t, 2*time.Second, func() bool { return mock.count() >= 1 })
 
+	// Cancel and wait for the goroutine to actually exit before touching
+	// session state — otherwise reads race with an in-flight refresh write.
 	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background refresh did not exit after cancel")
+	}
 
 	if mock.count() != 1 {
 		t.Errorf("expected exactly 1 refresh (near-expiry only), got %d", mock.count())
 	}
 
-	// Confirm the near-expiry session was actually rotated.
-	if sess := store.sessions["near-expiry"]; sess.AccessToken == "old" {
+	// Snapshot session state under the store lock; refreshSession writes these
+	// fields under the same lock, so this pairs safely with the race detector.
+	snapshot := func(k string) string {
+		store.mu.RLock()
+		defer store.mu.RUnlock()
+		if sess := store.sessions[k]; sess != nil {
+			return sess.AccessToken
+		}
+		return ""
+	}
+	if snapshot("near-expiry") == "old" {
 		t.Error("near-expiry session was not rotated")
 	}
-	// Confirm the healthy one was left alone.
-	if sess := store.sessions["healthy"]; sess.AccessToken != "fresh" {
+	if snapshot("healthy") != "fresh" {
 		t.Error("healthy session was unexpectedly rotated")
 	}
 }
