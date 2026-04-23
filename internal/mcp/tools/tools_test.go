@@ -39,6 +39,11 @@ func setupServer(t *testing.T, mux *cmdtest.RouterMux) *mcp.ClientSession {
 	RegisterVariableTools(server, tf.Factory)
 	RegisterEnvironmentTools(server, tf.Factory)
 	RegisterDeploymentTools(server, tf.Factory)
+	RegisterPackageTools(server, tf.Factory)
+	RegisterRegistryTools(server, tf.Factory)
+	RegisterProjectTools(server, tf.Factory)
+	RegisterPipelineAnalyticsTools(server, tf.Factory)
+	RegisterTagTools(server, tf.Factory)
 
 	st, ct := mcp.NewInMemoryTransports()
 	ctx := context.Background()
@@ -1746,5 +1751,499 @@ func TestDeploymentViewRequiresID(t *testing.T) {
 	_, err := callTool(t, cs, "deployment_view", map[string]any{"repo": "test-owner/test-repo"})
 	if err == nil {
 		t.Fatal("expected error when deployment is missing")
+	}
+}
+
+// --- Package tool tests ---
+
+func TestPackageList(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/packages", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "name": "my-lib", "package_type": "npm", "version": "1.0.0"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "package_list", map[string]any{"repo": "test-owner/test-repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "my-lib") {
+		t.Errorf("expected package name in output, got: %s", text)
+	}
+}
+
+func TestPackageView(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	// package_view lists packages filtered by name; GitLab's API returns an array.
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/packages", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "name": "my-lib", "package_type": "npm", "version": "1.0.0"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "package_view", map[string]any{
+		"repo": "test-owner/test-repo", "name": "my-lib",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "my-lib") {
+		t.Errorf("expected package details, got: %s", text)
+	}
+}
+
+func TestPackageViewRequiresName(t *testing.T) {
+	cs := setupServer(t, cmdtest.NewRouterMux())
+	_, err := callTool(t, cs, "package_view", map[string]any{"repo": "test-owner/test-repo"})
+	if err == nil {
+		t.Fatal("expected error when name is missing")
+	}
+}
+
+func TestPackageDelete(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	// package_delete lists packages filtered by name, then deletes matches.
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/packages", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 42, "name": "my-lib", "package_type": "npm", "version": "1.0.0"},
+		})
+	})
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/packages/42", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			cmdtest.ErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "package_delete", map[string]any{
+		"repo": "test-owner/test-repo", "name": "my-lib",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "Deleted") {
+		t.Errorf("expected delete confirmation, got: %s", text)
+	}
+}
+
+func TestPackageDeleteRequiresName(t *testing.T) {
+	cs := setupServer(t, cmdtest.NewRouterMux())
+	_, err := callTool(t, cs, "package_delete", map[string]any{"repo": "test-owner/test-repo"})
+	if err == nil {
+		t.Fatal("expected error when name is missing")
+	}
+}
+
+// TestPackageList_GroupScope exercises the group-level packages branch.
+func TestPackageList_GroupScope(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/groups/my-group/packages", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 10, "name": "shared-lib", "package_type": "maven"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "package_list", map[string]any{"group": "my-group"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "shared-lib") {
+		t.Errorf("expected group package in output, got: %s", text)
+	}
+}
+
+// TestPackageView_GroupScope exercises the group-level package lookup.
+func TestPackageView_GroupScope(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/groups/my-group/packages", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 10, "name": "shared-lib", "package_type": "maven", "version": "1.0"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "package_view", map[string]any{
+		"group": "my-group", "name": "shared-lib",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "shared-lib") {
+		t.Errorf("expected package in output, got: %s", text)
+	}
+}
+
+// TestProjectList_GroupScope exercises the group-filtered project listing.
+func TestProjectList_GroupScope(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/groups/acme/projects", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "path_with_namespace": "acme/svc-a"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "project_list", map[string]any{"group": "acme"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "acme/svc-a") {
+		t.Errorf("expected group-scoped projects, got: %s", text)
+	}
+}
+
+// TestVariableSet_GroupScope exercises the group-level variable upsert.
+func TestVariableSet_GroupScope(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	// PUT to update fails -> POST to create succeeds.
+	mux.HandleFunc("/api/v4/groups/my-group/variables/GROUP_VAR", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.ErrorResponse(w, http.StatusNotFound, "not found")
+	})
+	mux.HandleFunc("/api/v4/groups/my-group/variables", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			cmdtest.ErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		cmdtest.JSONResponse(w, http.StatusCreated, map[string]interface{}{
+			"key": "GROUP_VAR", "value": "v",
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "variable_set", map[string]any{
+		"group": "my-group", "key": "GROUP_VAR", "value": "v",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "group variable") {
+		t.Errorf("expected group variable message, got: %s", text)
+	}
+}
+
+// --- Project tool tests ---
+
+func TestProjectList(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "path_with_namespace": "group/repo1"},
+			{"id": 2, "path_with_namespace": "group/repo2"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "project_list", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "group/repo1") || !strings.Contains(text, "group/repo2") {
+		t.Errorf("expected project paths in output, got: %s", text)
+	}
+}
+
+func TestProjectView(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"id": 1, "path_with_namespace": "test-owner/test-repo",
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "project_view", map[string]any{"repo": "test-owner/test-repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "test-owner/test-repo") {
+		t.Errorf("expected project path in output, got: %s", text)
+	}
+}
+
+func TestProjectMembers(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/members/all", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "username": "alice", "access_level": 40},
+			{"id": 2, "username": "bob", "access_level": 30},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "project_members", map[string]any{"repo": "test-owner/test-repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "alice") || !strings.Contains(text, "bob") {
+		t.Errorf("expected members in output, got: %s", text)
+	}
+}
+
+// --- Registry tool tests ---
+
+func TestRegistryList(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/registry/repositories", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "name": "app", "path": "group/app"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "registry_list", map[string]any{"repo": "test-owner/test-repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "app") {
+		t.Errorf("expected registry repo in output, got: %s", text)
+	}
+}
+
+func TestRegistryTags(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/registry/repositories/1/tags", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"name": "v1.0", "path": "group/app:v1.0"},
+			{"name": "latest", "path": "group/app:latest"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "registry_tags", map[string]any{
+		"repo": "test-owner/test-repo", "repository_id": 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "v1.0") || !strings.Contains(text, "latest") {
+		t.Errorf("expected tags in output, got: %s", text)
+	}
+}
+
+func TestRegistryTagsRequiresID(t *testing.T) {
+	cs := setupServer(t, cmdtest.NewRouterMux())
+	_, err := callTool(t, cs, "registry_tags", map[string]any{"repo": "test-owner/test-repo"})
+	if err == nil {
+		t.Fatal("expected error when repository_id is missing")
+	}
+}
+
+func TestRegistryViewRepo(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	// No project in the path — GitLab's singleton-by-id endpoint.
+	mux.HandleFunc("/api/v4/registry/repositories/1", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"id": 1, "name": "app", "tags_count": 3,
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "registry_view", map[string]any{
+		"repo": "test-owner/test-repo", "repository_id": 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, `"id": 1`) {
+		t.Errorf("expected repo details, got: %s", text)
+	}
+}
+
+func TestRegistryViewTag(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/registry/repositories/1/tags/v1.0", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"name": "v1.0", "total_size": 123456, "revision": "abc123",
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "registry_view", map[string]any{
+		"repo": "test-owner/test-repo", "repository_id": 1, "tag": "v1.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "abc123") {
+		t.Errorf("expected tag revision in output, got: %s", text)
+	}
+}
+
+func TestRegistryDeleteTag(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/registry/repositories/1/tags/v1.0", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			cmdtest.ErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "registry_delete_tag", map[string]any{
+		"repo": "test-owner/test-repo", "repository_id": 1, "tag": "v1.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, `Deleted tag "v1.0"`) {
+		t.Errorf("expected delete confirmation, got: %s", text)
+	}
+}
+
+// --- Tag tool tests ---
+
+func TestTagList(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/repository/tags", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"name": "v1.0"},
+			{"name": "v2.0"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "tag_list", map[string]any{"repo": "test-owner/test-repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "v1.0") || !strings.Contains(text, "v2.0") {
+		t.Errorf("expected tags in output, got: %s", text)
+	}
+}
+
+func TestTagCreate(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/repository/tags", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			cmdtest.ErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		cmdtest.JSONResponse(w, http.StatusCreated, map[string]interface{}{
+			"name": "v3.0",
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "tag_create", map[string]any{
+		"repo": "test-owner/test-repo", "name": "v3.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, `Created tag "v3.0"`) {
+		t.Errorf("expected tag create confirmation, got: %s", text)
+	}
+}
+
+func TestTagDelete(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/repository/tags/v1.0", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			cmdtest.ErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "tag_delete", map[string]any{
+		"repo": "test-owner/test-repo", "name": "v1.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, `Deleted tag "v1.0"`) {
+		t.Errorf("expected tag delete confirmation, got: %s", text)
+	}
+}
+
+// --- Pipeline analytics tool tests ---
+
+func TestPipelineStats(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/pipelines", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "status": "success", "ref": "main", "updated_at": "2026-01-01T00:00:00Z"},
+			{"id": 2, "status": "failed", "ref": "main", "updated_at": "2026-01-02T00:00:00Z"},
+			{"id": 3, "status": "success", "ref": "main", "updated_at": "2026-01-03T00:00:00Z"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "pipeline_stats", map[string]any{
+		"repo": "test-owner/test-repo", "days": 30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Expect the aggregated JSON to include a total and the success/failure breakdown.
+	if !strings.Contains(text, "total_pipelines") {
+		t.Errorf("expected total_pipelines in stats output, got: %s", text)
+	}
+}
+
+func TestPipelineTrends(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/pipelines", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "status": "success", "ref": "main", "updated_at": "2026-01-01T00:00:00Z"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	if _, err := callTool(t, cs, "pipeline_trends", map[string]any{
+		"repo": "test-owner/test-repo", "days": 7,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPipelineSlowestJobs(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/pipelines", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "status": "success", "ref": "main", "updated_at": "2026-01-01T00:00:00Z"},
+		})
+	})
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/pipelines/1/jobs", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "name": "build", "status": "success", "duration": 120.5},
+			{"id": 2, "name": "test", "status": "success", "duration": 45.2},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	if _, err := callTool(t, cs, "pipeline_slowest_jobs", map[string]any{
+		"repo": "test-owner/test-repo", "days": 7,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPipelineFlaky(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/pipelines", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "status": "success", "ref": "main", "updated_at": "2026-01-01T00:00:00Z"},
+		})
+	})
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/pipelines/1/jobs", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "name": "build", "status": "success"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	if _, err := callTool(t, cs, "pipeline_flaky", map[string]any{
+		"repo": "test-owner/test-repo", "days": 7,
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

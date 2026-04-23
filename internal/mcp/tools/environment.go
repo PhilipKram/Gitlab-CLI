@@ -48,8 +48,8 @@ func registerEnvironmentList(server *mcp.Server, f *cmdutil.Factory) {
 
 func registerEnvironmentView(server *mcp.Server, f *cmdutil.Factory) {
 	type Input struct {
-		Environment int64  `json:"environment"    jsonschema:"environment ID"`
-		Repo        string `json:"repo,omitempty" jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
+		Environment int64  `json:"environment" jsonschema:"environment ID"`
+		Repo string `json:"repo,omitempty" jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
 	}
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -73,8 +73,8 @@ func registerEnvironmentView(server *mcp.Server, f *cmdutil.Factory) {
 
 func registerEnvironmentStop(server *mcp.Server, f *cmdutil.Factory) {
 	type Input struct {
-		Environment int64  `json:"environment"    jsonschema:"environment ID"`
-		Repo        string `json:"repo,omitempty" jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
+		Environment int64  `json:"environment" jsonschema:"environment ID"`
+		Repo string `json:"repo,omitempty" jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
 	}
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -98,8 +98,8 @@ func registerEnvironmentStop(server *mcp.Server, f *cmdutil.Factory) {
 
 func registerEnvironmentDelete(server *mcp.Server, f *cmdutil.Factory) {
 	type Input struct {
-		Environment int64  `json:"environment"    jsonschema:"environment ID"`
-		Repo        string `json:"repo,omitempty" jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
+		Environment int64  `json:"environment" jsonschema:"environment ID"`
+		Repo string `json:"repo,omitempty" jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
 	}
 
 	mcp.AddTool(server, &mcp.Tool{
