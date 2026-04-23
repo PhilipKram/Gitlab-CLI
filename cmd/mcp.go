@@ -1200,17 +1200,26 @@ func (s *mcpSessionStore) takeCode(code string) *oauthAuthCode {
 
 // sessionBearerAuth wraps an http.Handler to require a valid session bearer token.
 // Returns 401 for unauthenticated requests so MCP clients trigger the OAuth flow.
-func (s *mcpSessionStore) sessionBearerAuth(next http.Handler) http.Handler {
+// resourceMetadataURL is advertised in the WWW-Authenticate header so MCP 2025-06-18
+// clients can discover the authorization server via RFC 9728 protected-resource metadata.
+// If empty, a bare "Bearer" challenge is emitted (used by unit tests).
+func (s *mcpSessionStore) sessionBearerAuth(next http.Handler, resourceMetadataURL string) http.Handler {
+	unauthorized := `Bearer`
+	invalidToken := `Bearer error="invalid_token"`
+	if resourceMetadataURL != "" {
+		unauthorized = fmt.Sprintf(`Bearer resource_metadata="%s"`, resourceMetadataURL)
+		invalidToken = fmt.Sprintf(`Bearer error="invalid_token", resource_metadata="%s"`, resourceMetadataURL)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hdr := r.Header.Get("Authorization")
 		if !strings.HasPrefix(hdr, "Bearer ") {
-			w.Header().Set("WWW-Authenticate", "Bearer")
+			w.Header().Set("WWW-Authenticate", unauthorized)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 		token := strings.TrimPrefix(hdr, "Bearer ")
 		if s.getSession(token) == nil {
-			w.Header().Set("WWW-Authenticate", "Bearer error=\"invalid_token\"")
+			w.Header().Set("WWW-Authenticate", invalidToken)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -1274,11 +1283,17 @@ func serveHTTPOAuth(f *cmdutil.Factory, host string, port int, clientID, gitlabH
 
 	mux := http.NewServeMux()
 
-	// MCP endpoint with session auth
-	mux.Handle(basePath, store.sessionBearerAuth(mcpHandler))
+	// MCP endpoint with session auth. 401 responses advertise the
+	// protected-resource metadata URL so MCP 2025-06-18 clients can discover
+	// the authorization server per RFC 9728.
+	resourceMetadataURL := baseURL + "/.well-known/oauth-protected-resource"
+	mux.Handle(basePath, store.sessionBearerAuth(mcpHandler, resourceMetadataURL))
 
 	// OAuth Authorization Server Metadata (RFC 8414)
 	mux.HandleFunc("/.well-known/oauth-authorization-server", oauthMetadataHandler(baseURL))
+
+	// OAuth Protected Resource Metadata (RFC 9728 / MCP 2025-06-18)
+	mux.HandleFunc("/.well-known/oauth-protected-resource", oauthProtectedResourceHandler(baseURL))
 
 	// Dynamic Client Registration (RFC 7591)
 	mux.HandleFunc("/oauth/register", oauthRegisterHandler(store))
@@ -1345,6 +1360,26 @@ func oauthMetadataHandler(baseURL string) http.HandlerFunc {
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"code_challenge_methods_supported":       []string{"S256"},
 		"token_endpoint_auth_methods_supported": []string{"none"},
+		"scopes_supported":                       strings.Split(auth.DefaultScopes(), " "),
+	}
+	body, _ := json.Marshal(metadata)
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}
+}
+
+// oauthProtectedResourceHandler serves RFC 9728 OAuth 2.0 Protected Resource
+// Metadata. The MCP 2025-06-18 authorization spec requires resource servers to
+// expose this so clients can discover the authorization server from a 401
+// response. The WWW-Authenticate header on protected endpoints points here.
+func oauthProtectedResourceHandler(baseURL string) http.HandlerFunc {
+	metadata := map[string]interface{}{
+		"resource":                       baseURL,
+		"authorization_servers":          []string{baseURL},
+		"bearer_methods_supported":       []string{"header"},
+		"scopes_supported":               strings.Split(auth.DefaultScopes(), " "),
 	}
 	body, _ := json.Marshal(metadata)
 
@@ -1394,7 +1429,7 @@ func oauthRegisterHandler(store *mcpSessionStore) http.HandlerFunc {
 			"client_id":                    regClientID,
 			"client_name":                  req.ClientName,
 			"redirect_uris":               req.RedirectURIs,
-			"grant_types":                 []string{"authorization_code"},
+			"grant_types":                 []string{"authorization_code", "refresh_token"},
 			"response_types":              []string{"code"},
 			"token_endpoint_auth_method":  "none",
 		})
@@ -1643,6 +1678,7 @@ func handleRefreshGrant(w http.ResponseWriter, r *http.Request, store *mcpSessio
 		jsonError(w, "invalid_request", "refresh_token is required", http.StatusBadRequest)
 		return
 	}
+	formClientID := r.FormValue("client_id")
 
 	// Find session by MCP refresh token
 	var sess *mcpSession
@@ -1657,6 +1693,15 @@ func handleRefreshGrant(w http.ResponseWriter, r *http.Request, store *mcpSessio
 
 	if sess == nil {
 		jsonError(w, "invalid_grant", "Invalid refresh token", http.StatusBadRequest)
+		return
+	}
+
+	// If the client supplies client_id (RFC 6749 §6 requires it for public
+	// clients), it must match the one the refresh token was issued to.
+	// Missing client_id is tolerated for backwards-compatibility with clients
+	// that only present the refresh token.
+	if formClientID != "" && subtle.ConstantTimeCompare([]byte(formClientID), []byte(sess.ClientID)) != 1 {
+		jsonError(w, "invalid_grant", "client_id mismatch", http.StatusBadRequest)
 		return
 	}
 

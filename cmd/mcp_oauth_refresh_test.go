@@ -381,6 +381,49 @@ func TestHandleRefreshGrant_RotatesBearerAndRefreshToken(t *testing.T) {
 	}
 }
 
+// TestHandleRefreshGrant_RejectsMismatchedClientID ensures an attacker holding
+// someone else's refresh token can't use it under their own registered client.
+// RFC 6749 §6 requires the server to validate the client when present.
+func TestHandleRefreshGrant_RejectsMismatchedClientID(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("GLAB_CONFIG_DIR", tmpDir)
+
+	store := newSessionStore()
+	store.addSession(&mcpSession{
+		BearerToken:     "b",
+		MCPRefreshToken: "mcp-r",
+		GitLabHost:      "gitlab.example.com",
+		RefreshToken:    "gl-r",
+		GitLabClientID:  "app",
+		ClientID:        "client-owner",
+		TokenExpiresAt:  time.Now().Add(1 * time.Hour).Unix(),
+	})
+	handler := oauthTokenHandler(store, "gitlab.example.com", "app", "http://localhost/cb", io.Discard)
+
+	form := url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {"mcp-r"},
+		"client_id":     {"client-attacker"},
+	}
+	req := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on client_id mismatch, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["error"] != "invalid_grant" {
+		t.Errorf("expected invalid_grant, got %v", resp)
+	}
+	// The legitimate session must survive an attacker probe.
+	if store.getSession("b") == nil {
+		t.Error("owner's session should not be dropped by a failed impersonation attempt")
+	}
+}
+
 // TestHandleRefreshGrant_FailsWhenGitLabRefreshFails simulates GitLab revoking
 // the refresh token — the MCP client must be told to re-authorize.
 func TestHandleRefreshGrant_FailsWhenGitLabRefreshFails(t *testing.T) {
