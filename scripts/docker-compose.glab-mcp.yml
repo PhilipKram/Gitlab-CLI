@@ -1,0 +1,65 @@
+# glab MCP server on Docker Desktop / Rancher Desktop (macOS). Pair with
+# scripts/install-passthrough.sh when the target GitLab is VPN-only (the
+# passthrough makes the Mac forward :443 to your private GitLab so this
+# container can reach it without joining the VPN itself).
+#
+# Required env (see scripts/.env.example):
+#   GITLAB_HOST       Hostname of the target GitLab (e.g. gitlab.example.com)
+#   GLAB_CLIENT_ID    OAuth application ID registered in that GitLab
+#
+# Optional env:
+#   MAC_HOST_IP       IP of the Mac from inside the container (default 192.168.5.2,
+#                     which is the Rancher Desktop / Lima VM default). Only needed
+#                     with the VPN passthrough.
+#
+# Usage:
+#   docker compose --env-file scripts/.env -f scripts/docker-compose.glab-mcp.yml up -d
+#
+# Volume `glab-config` holds:
+#   mcp_sessions.json   per-user OAuth sessions (persist across restarts)
+#   hosts.json          optional; holds the GitLab OAuth client_id
+#   mcp_token           shared bearer token (unused in OAuth mode)
+
+services:
+  glab-mcp:
+    image: glab-mcp:oauth
+    container_name: glab-mcp
+    restart: unless-stopped
+    ports:
+      - "7171:7171"
+    volumes:
+      - glab-config:/config
+    environment:
+      GLAB_CONFIG_DIR: /config
+      # Tune background refresh cadence if your GitLab tokens have a non-default TTL.
+      # GLAB_MCP_REFRESH_INTERVAL_SECONDS: "300"
+      # GLAB_MCP_REFRESH_WINDOW_SECONDS: "900"
+    # Route the target GitLab through the Mac so the Mac's passthrough proxy
+    # can reach a VPN-only instance. On Rancher Desktop, the Mac's address
+    # from inside the Lima VM is 192.168.5.2 (verify with:
+    #   docker run --rm alpine getent hosts host.docker.internal).
+    # `host-gateway` on Rancher Desktop maps to the Docker bridge (172.17.0.1),
+    # NOT to the Mac — so we pin the IP explicitly. Remove this block entirely
+    # if the GitLab is reachable on the public internet.
+    extra_hosts:
+      - "${GITLAB_HOST:?set GITLAB_HOST in scripts/.env}:${MAC_HOST_IP:-192.168.5.2}"
+    entrypoint: ["/glab"]
+    command:
+      - "mcp"
+      - "serve"
+      - "--transport"
+      - "http"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "7171"
+      - "--client-id"
+      - "${GLAB_CLIENT_ID:?set GLAB_CLIENT_ID in scripts/.env}"
+      - "--gitlab-host"
+      - "${GITLAB_HOST}"
+      - "--external-url"
+      - "http://localhost:7171"
+
+volumes:
+  glab-config:
+    external: true

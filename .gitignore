@@ -16,3 +16,6 @@ dist/
 # Build artifacts
 /glab
 coverage.html
+
+# Local environment for scripts/setup-docker-mcp.sh
+scripts/.env
