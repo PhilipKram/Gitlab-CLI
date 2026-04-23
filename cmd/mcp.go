@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -581,6 +583,18 @@ server URL with no token needed.`,
 				_, _ = fmt.Fprintln(f.IOStreams.ErrOut, "glab MCP server running on stdio")
 				return server.Run(context.Background(), &mcp.StdioTransport{})
 			case "http":
+				// Fall back to the client_id stored in host config when --client-id is not set.
+				// Users can run: `glab config set client_id <app-id> --host gitlab.example.com`
+				// then just `glab mcp serve --transport http` to get per-user OAuth.
+				if clientID == "" {
+					h := gitlabHost
+					if h == "" {
+						h = config.DefaultHost()
+					}
+					if h != "" {
+						clientID = config.ClientIDForHost(h)
+					}
+				}
 				if clientID != "" {
 					return serveHTTPOAuth(f, host, port, clientID, gitlabHost, stateless, basePath, externalURL)
 				}
@@ -763,6 +777,38 @@ func saveMCPToken(token string) error {
 // GitLab token proactively.
 const defaultTokenExpiry = 30 * 24 * 3600 // 30 days
 
+// Background-refresh cadence: every `interval`, rotate any session whose GitLab
+// token expires within `window`. Shorter than typical access-token TTL so
+// refresh tokens rotate even with no MCP traffic. Overridable via env vars for
+// operators with non-default GitLab token TTLs.
+const (
+	defaultBackgroundRefreshInterval = 5 * time.Minute
+	defaultBackgroundRefreshWindow   = 15 * time.Minute
+)
+
+// backgroundRefreshTuning reads the interval and window from env vars, falling
+// back to defaults. GLAB_MCP_REFRESH_INTERVAL_SECONDS and ..._WINDOW_SECONDS.
+func backgroundRefreshTuning() (interval, window time.Duration) {
+	interval = defaultBackgroundRefreshInterval
+	window = defaultBackgroundRefreshWindow
+	if v := os.Getenv("GLAB_MCP_REFRESH_INTERVAL_SECONDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			interval = time.Duration(n) * time.Second
+		}
+	}
+	if v := os.Getenv("GLAB_MCP_REFRESH_WINDOW_SECONDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			window = time.Duration(n) * time.Second
+		}
+	}
+	return
+}
+
+// errRefreshAuthFailed marks a refresh failure that's terminal: GitLab rejected
+// the refresh token (4xx). Callers should drop the session and force re-auth.
+// Anything else (network error, 5xx) is transient and the session should be kept.
+var errRefreshAuthFailed = errors.New("gitlab refresh token rejected")
+
 // mcpSession represents an authenticated user's session.
 type mcpSession struct {
 	BearerToken       string `json:"bearer_token"`
@@ -775,6 +821,11 @@ type mcpSession struct {
 	GitLabClientID    string `json:"gitlab_client_id,omitempty"` // GitLab OAuth app ID (for token refresh)
 	GitLabRedirectURI string `json:"gitlab_redirect_uri,omitempty"`
 	Username          string `json:"username,omitempty"`
+
+	// refreshMu serialises token refreshes for this session so a request-path
+	// refresh and a background-tick refresh can't both consume the same
+	// single-use GitLab refresh token.
+	refreshMu sync.Mutex `json:"-"`
 }
 
 // oauthRegisteredClient represents a dynamically registered OAuth client.
@@ -821,6 +872,12 @@ type mcpSessionStore struct {
 	clients   map[string]*oauthRegisteredClient // client_id → client
 	pending   map[string]*oauthAuthRequest      // gitlab state → auth request (ephemeral)
 	codes     map[string]*oauthAuthCode         // auth code → code info (ephemeral)
+
+	// tokenEndpoint builds the GitLab /oauth/token URL for a given host.
+	// Overridable for tests that point at an httptest server.
+	tokenEndpoint func(host string) string
+	// httpClient is used for GitLab refresh calls. Overridable for tests.
+	httpClient *http.Client
 }
 
 // mcpSessionsFile is the on-disk format for persisted session store data.
@@ -835,13 +892,19 @@ func mcpSessionsPath() string {
 
 func newSessionStore() *mcpSessionStore {
 	s := &mcpSessionStore{
-		sessions: make(map[string]*mcpSession),
-		clients:  make(map[string]*oauthRegisteredClient),
-		pending:  make(map[string]*oauthAuthRequest),
-		codes:    make(map[string]*oauthAuthCode),
+		sessions:      make(map[string]*mcpSession),
+		clients:       make(map[string]*oauthRegisteredClient),
+		pending:       make(map[string]*oauthAuthRequest),
+		codes:         make(map[string]*oauthAuthCode),
+		tokenEndpoint: defaultTokenEndpoint,
+		httpClient:    &http.Client{Timeout: 30 * time.Second},
 	}
 	s.loadFromDisk()
 	return s
+}
+
+func defaultTokenEndpoint(host string) string {
+	return fmt.Sprintf("https://%s/oauth/token", host)
 }
 
 // loadFromDisk restores persisted sessions and clients.
@@ -867,6 +930,9 @@ func (s *mcpSessionStore) loadFromDisk() {
 }
 
 // saveToDisk persists sessions and clients. Must be called with mu held.
+// Writes are atomic (temp file + rename) so a crash mid-write never leaves a
+// truncated sessions file — which would otherwise lose newly-rotated refresh
+// tokens and force users to re-authenticate.
 func (s *mcpSessionStore) saveToDisk() {
 	file := mcpSessionsFile{}
 	for _, sess := range s.sessions {
@@ -880,8 +946,27 @@ func (s *mcpSessionStore) saveToDisk() {
 		return
 	}
 	dir := config.ConfigDir()
-	_ = os.MkdirAll(dir, 0o755)
-	_ = os.WriteFile(mcpSessionsPath(), data, 0o600)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(dir, "mcp_sessions-*.tmp")
+	if err != nil {
+		return
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return
+	}
+	_ = os.Chmod(tmpPath, 0o600)
+	if err := os.Rename(tmpPath, mcpSessionsPath()); err != nil {
+		_ = os.Remove(tmpPath)
+	}
 }
 
 func (s *mcpSessionStore) getSession(bearerToken string) *mcpSession {
@@ -894,23 +979,105 @@ func (s *mcpSessionStore) getSession(bearerToken string) *mcpSession {
 	// Auto-refresh if the GitLab token expires within 5 minutes
 	if sess.TokenExpiresAt > 0 && time.Now().Unix() > sess.TokenExpiresAt-300 {
 		if err := s.refreshSession(sess); err != nil {
-			// If token is already expired and refresh failed, drop the session
+			if errors.Is(err, errRefreshAuthFailed) {
+				// GitLab rejected the refresh token. Drop the session.
+				s.deleteSession(sess.BearerToken)
+				return nil
+			}
+			// Transient (network/5xx). If the access token is already expired
+			// the session is unusable; otherwise keep serving the current token.
 			if time.Now().Unix() >= sess.TokenExpiresAt {
 				return nil
 			}
-			// Not yet expired, return the stale session and hope for the best
 		}
 	}
 	return sess
 }
 
-// refreshSession uses the stored refresh token to obtain a new GitLab access token.
+// startBackgroundRefresh proactively refreshes GitLab access tokens before they
+// expire, so sessions stay alive even when MCP clients are idle for long periods.
+// Each tick it finds sessions whose tokens expire within `window` and refreshes them.
+// It runs until ctx is cancelled.
+func (s *mcpSessionStore) startBackgroundRefresh(ctx context.Context, interval, window time.Duration, errOut io.Writer) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.refreshExpiringSessions(window, errOut)
+		}
+	}
+}
+
+// refreshExpiringSessions refreshes every session whose GitLab token expires
+// within the window. Called by the background loop.
+func (s *mcpSessionStore) refreshExpiringSessions(window time.Duration, errOut io.Writer) {
+	cutoff := time.Now().Unix() + int64(window.Seconds())
+
+	s.mu.RLock()
+	var toRefresh []*mcpSession
+	for _, sess := range s.sessions {
+		if sess.TokenExpiresAt > 0 && sess.TokenExpiresAt <= cutoff && sess.RefreshToken != "" && sess.GitLabClientID != "" {
+			toRefresh = append(toRefresh, sess)
+		}
+	}
+	s.mu.RUnlock()
+
+	for _, sess := range toRefresh {
+		err := s.refreshSession(sess)
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, errRefreshAuthFailed) {
+			// GitLab rejected the refresh token. Drop the session so we stop
+			// retrying a dead token every tick.
+			s.deleteSession(sess.BearerToken)
+			if errOut != nil {
+				_, _ = fmt.Fprintf(errOut, "dropped session for client %s: %v\n", sess.ClientID, err)
+			}
+			continue
+		}
+		// Transient (VPN/passthrough down, GitLab 5xx). Keep the session; we'll
+		// try again on the next tick.
+		if errOut != nil {
+			_, _ = fmt.Fprintf(errOut, "background refresh for client %s transient failure: %v\n", sess.ClientID, err)
+		}
+	}
+}
+
+// refreshSession uses the stored refresh token to obtain a new GitLab access
+// token. Errors are classified:
+//   - nil: refresh succeeded (or was unnecessary because another goroutine just
+//     rotated the tokens)
+//   - wraps errRefreshAuthFailed: GitLab returned 4xx. The refresh token is dead;
+//     callers should delete the session.
+//   - any other error: transient (network, 5xx). The session is still usable;
+//     don't delete it — retry later.
 func (s *mcpSessionStore) refreshSession(sess *mcpSession) error {
+	// Serialise refreshes per session so a request-path auto-refresh and a
+	// background-tick refresh can't race to consume the same single-use
+	// GitLab refresh token.
+	sess.refreshMu.Lock()
+	defer sess.refreshMu.Unlock()
+
+	// Another goroutine may have just refreshed while we were waiting for the
+	// lock. If the session is no longer near expiry, skip — burning a refresh
+	// token for nothing is how we lose sessions on flaky networks.
+	if sess.TokenExpiresAt > 0 && time.Now().Unix() < sess.TokenExpiresAt-300 {
+		return nil
+	}
+
 	if sess.RefreshToken == "" || sess.GitLabClientID == "" {
 		return fmt.Errorf("no refresh token or client ID available")
 	}
 
-	tokenURL := fmt.Sprintf("https://%s/oauth/token", sess.GitLabHost)
+	endpoint := s.tokenEndpoint
+	if endpoint == nil {
+		endpoint = defaultTokenEndpoint
+	}
+	tokenURL := endpoint(sess.GitLabHost)
 	data := url.Values{
 		"client_id":     {sess.GitLabClientID},
 		"refresh_token": {sess.RefreshToken},
@@ -920,9 +1087,14 @@ func (s *mcpSessionStore) refreshSession(sess *mcpSession) error {
 		data.Set("redirect_uri", sess.GitLabRedirectURI)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := s.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
 	resp, err := client.PostForm(tokenURL, data)
 	if err != nil {
+		// Transient: didn't reach GitLab (connection refused, TLS timeout) or
+		// the response was truncated (EOF). Leave the refresh token alone.
 		return fmt.Errorf("requesting token refresh: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -932,7 +1104,12 @@ func (s *mcpSessionStore) refreshSession(sess *mcpSession) error {
 		return fmt.Errorf("reading token refresh response: %w", err)
 	}
 
+	if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+		// GitLab rejected us. Refresh token is dead — caller should drop the session.
+		return fmt.Errorf("%w (HTTP %d): %s", errRefreshAuthFailed, resp.StatusCode, string(body))
+	}
 	if resp.StatusCode != http.StatusOK {
+		// 5xx: GitLab is sick, try again later.
 		return fmt.Errorf("token refresh failed (HTTP %d): %s", resp.StatusCode, string(body))
 	}
 
@@ -964,6 +1141,19 @@ func (s *mcpSessionStore) addSession(sess *mcpSession) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[sess.BearerToken] = sess
+	s.saveToDisk()
+}
+
+// deleteSession removes a session and persists the change. Called when GitLab
+// has definitively rejected the session's refresh token; further attempts to
+// use it would just burn cycles and pollute logs.
+func (s *mcpSessionStore) deleteSession(bearerToken string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.sessions[bearerToken]; !ok {
+		return
+	}
+	delete(s.sessions, bearerToken)
 	s.saveToDisk()
 }
 
@@ -1116,6 +1306,11 @@ func serveHTTPOAuth(f *cmdutil.Factory, host string, port int, clientID, gitlabH
 	// Graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Background refresh: keeps GitLab tokens alive when MCP clients are idle.
+	interval, window := backgroundRefreshTuning()
+	_, _ = fmt.Fprintf(errOut, "Background refresh: every %s, window %s\n", interval, window)
+	go store.startBackgroundRefresh(ctx, interval, window, errOut)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -1468,7 +1663,16 @@ func handleRefreshGrant(w http.ResponseWriter, r *http.Request, store *mcpSessio
 	// Refresh the GitLab token
 	if err := store.refreshSession(sess); err != nil {
 		_, _ = fmt.Fprintf(errOut, "GitLab token refresh failed during MCP refresh: %v\n", err)
-		jsonError(w, "invalid_grant", "GitLab token refresh failed — re-authorization required", http.StatusBadRequest)
+		if errors.Is(err, errRefreshAuthFailed) {
+			// Terminal: GitLab rejected the refresh token. Drop the session
+			// and tell the client to re-authorize.
+			store.deleteSession(sess.BearerToken)
+			jsonError(w, "invalid_grant", "GitLab token refresh failed — re-authorization required", http.StatusBadRequest)
+			return
+		}
+		// Transient (VPN/passthrough blip, GitLab 5xx). Keep the session so the
+		// client can retry without losing its authorization.
+		jsonError(w, "temporarily_unavailable", "GitLab unreachable — try again", http.StatusServiceUnavailable)
 		return
 	}
 
