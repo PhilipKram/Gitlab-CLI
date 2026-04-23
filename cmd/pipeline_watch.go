@@ -6,12 +6,14 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/PhilipKram/gitlab-cli/internal/cmdutil"
 	"github.com/PhilipKram/gitlab-cli/internal/errors"
 	"github.com/spf13/cobra"
+	gitlab "gitlab.com/gitlab-org/api/client-go"
 )
 
 func statusColor(status string) string {
@@ -39,14 +41,20 @@ func isTerminalStatus(status string) bool {
 }
 
 func newPipelineWatchCmd(f *cmdutil.Factory) *cobra.Command {
-	var interval time.Duration
+	var (
+		interval time.Duration
+		failFast bool
+		jobsOnly []string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "watch <pipeline-id>",
 		Short: "Watch a pipeline in real-time",
 		Long:  "Poll a pipeline and its jobs at a regular interval, displaying status updates until the pipeline reaches a terminal state.",
 		Example: `  $ glab pipeline watch 12345
-  $ glab pipeline watch 12345 --interval 10s`,
+  $ glab pipeline watch 12345 --interval 10s
+  $ glab pipeline watch 12345 --fail-fast
+  $ glab pipeline watch 12345 --jobs-only build,test`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pipelineID, err := strconv.ParseInt(args[0], 10, 64)
@@ -129,11 +137,26 @@ func newPipelineWatchCmd(f *cmdutil.Factory) *cobra.Command {
 				}
 				_, _ = fmt.Fprintln(out)
 
+				// Filter jobs if --jobs-only is set
+				displayJobs := jobs
+				if len(jobsOnly) > 0 && len(jobs) > 0 {
+					var filtered []*gitlab.Job
+					for _, job := range jobs {
+						for _, pattern := range jobsOnly {
+							if strings.Contains(job.Name, pattern) {
+								filtered = append(filtered, job)
+								break
+							}
+						}
+					}
+					displayJobs = filtered
+				}
+
 				// Jobs table
-				if len(jobs) > 0 {
+				if len(displayJobs) > 0 {
 					_, _ = fmt.Fprintf(out, "%-30s %-20s %-12s %s\n", "NAME", "STAGE", "STATUS", "DURATION")
 					_, _ = fmt.Fprintf(out, "%-30s %-20s %-12s %s\n", "----", "-----", "------", "--------")
-					for _, job := range jobs {
+					for _, job := range displayJobs {
 						duration := ""
 						if job.Duration > 0 {
 							duration = fmt.Sprintf("%.0fs", job.Duration)
@@ -144,6 +167,20 @@ func newPipelineWatchCmd(f *cmdutil.Factory) *cobra.Command {
 							statusColor(job.Status),
 							duration,
 						)
+					}
+				}
+
+				// Check for early exit on job failure
+				if failFast {
+					watchedJobs := displayJobs
+					if len(jobsOnly) == 0 {
+						watchedJobs = jobs
+					}
+					for _, job := range watchedJobs {
+						if job.Status == "failed" {
+							_, _ = fmt.Fprintf(out, "\nJob %q failed — exiting (--fail-fast)\n", job.Name)
+							return fmt.Errorf("job %q in pipeline #%d failed", job.Name, pipeline.ID)
+						}
 					}
 				}
 
@@ -159,6 +196,8 @@ func newPipelineWatchCmd(f *cmdutil.Factory) *cobra.Command {
 	}
 
 	cmd.Flags().DurationVarP(&interval, "interval", "i", 5*time.Second, "Polling interval (e.g. 5s, 10s)")
+	cmd.Flags().BoolVar(&failFast, "fail-fast", false, "Exit immediately when any job fails")
+	cmd.Flags().StringSliceVar(&jobsOnly, "jobs-only", nil, "Filter displayed/watched jobs by substring match (comma-separated)")
 
 	return cmd
 }

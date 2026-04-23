@@ -36,6 +36,9 @@ func setupServer(t *testing.T, mux *cmdtest.RouterMux) *mcp.ClientSession {
 	RegisterSnippetTools(server, tf.Factory)
 	RegisterBranchTools(server, tf.Factory)
 	RegisterUserTools(server, tf.Factory)
+	RegisterVariableTools(server, tf.Factory)
+	RegisterEnvironmentTools(server, tf.Factory)
+	RegisterDeploymentTools(server, tf.Factory)
 
 	st, ct := mcp.NewInMemoryTransports()
 	ctx := context.Background()
@@ -1484,5 +1487,264 @@ func TestToolAPIError(t *testing.T) {
 	})
 	if err == nil {
 		t.Error("expected error for API failure")
+	}
+}
+
+// --- Variable tool tests ---
+
+func TestVariableList(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/variables", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"key": "DEPLOY_TOKEN", "value": "secret", "masked": true},
+			{"key": "ENV", "value": "prod", "masked": false},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "variable_list", map[string]any{"repo": "test-owner/test-repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "DEPLOY_TOKEN") || !strings.Contains(text, "ENV") {
+		t.Errorf("expected variable keys in output, got: %s", text)
+	}
+}
+
+func TestVariableGet(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/variables/DEPLOY_TOKEN", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"key": "DEPLOY_TOKEN", "value": "secret",
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "variable_get", map[string]any{
+		"repo": "test-owner/test-repo", "key": "DEPLOY_TOKEN",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "DEPLOY_TOKEN") {
+		t.Errorf("expected variable key in output, got: %s", text)
+	}
+}
+
+func TestVariableGetRequiresKey(t *testing.T) {
+	cs := setupServer(t, cmdtest.NewRouterMux())
+	_, err := callTool(t, cs, "variable_get", map[string]any{"repo": "test-owner/test-repo"})
+	if err == nil {
+		t.Fatal("expected error when key is missing")
+	}
+}
+
+func TestVariableSet_CreatesWhenUpdateFails(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	// PUT (update) fails -> tool falls through to POST (create).
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/variables/NEW_KEY", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.ErrorResponse(w, http.StatusNotFound, "not found")
+	})
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/variables", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			cmdtest.ErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		cmdtest.JSONResponse(w, http.StatusCreated, map[string]interface{}{
+			"key": "NEW_KEY", "value": "v",
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "variable_set", map[string]any{
+		"repo": "test-owner/test-repo", "key": "NEW_KEY", "value": "v",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "Created") {
+		t.Errorf("expected create confirmation, got: %s", text)
+	}
+}
+
+func TestVariableSet_UpdatesWhenExists(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/variables/EXIST", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"key": "EXIST", "value": "new",
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "variable_set", map[string]any{
+		"repo": "test-owner/test-repo", "key": "EXIST", "value": "new",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "Updated") {
+		t.Errorf("expected update confirmation, got: %s", text)
+	}
+}
+
+func TestVariableDelete(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/variables/GONE", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			cmdtest.ErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "variable_delete", map[string]any{
+		"repo": "test-owner/test-repo", "key": "GONE",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "Deleted") {
+		t.Errorf("expected delete confirmation, got: %s", text)
+	}
+}
+
+// --- Environment tool tests ---
+
+func TestEnvironmentList(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/environments", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "name": "production", "state": "available"},
+			{"id": 2, "name": "staging", "state": "stopped"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "environment_list", map[string]any{"repo": "test-owner/test-repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "production") || !strings.Contains(text, "staging") {
+		t.Errorf("expected environment names in output, got: %s", text)
+	}
+}
+
+func TestEnvironmentView(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/environments/1", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"id": 1, "name": "production", "state": "available",
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "environment_view", map[string]any{
+		"repo": "test-owner/test-repo", "environment": 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "production") {
+		t.Errorf("expected environment name in output, got: %s", text)
+	}
+}
+
+func TestEnvironmentViewRequiresID(t *testing.T) {
+	cs := setupServer(t, cmdtest.NewRouterMux())
+	_, err := callTool(t, cs, "environment_view", map[string]any{"repo": "test-owner/test-repo"})
+	if err == nil {
+		t.Fatal("expected error when environment is missing")
+	}
+}
+
+func TestEnvironmentStop(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/environments/1/stop", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"id": 1, "name": "staging", "state": "stopped",
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "environment_stop", map[string]any{
+		"repo": "test-owner/test-repo", "environment": 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "Stopped environment #1") {
+		t.Errorf("expected stop confirmation, got: %s", text)
+	}
+}
+
+func TestEnvironmentDelete(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/environments/1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			cmdtest.ErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "environment_delete", map[string]any{
+		"repo": "test-owner/test-repo", "environment": 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "Deleted environment #1") {
+		t.Errorf("expected delete confirmation, got: %s", text)
+	}
+}
+
+// --- Deployment tool tests ---
+
+func TestDeploymentList(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/deployments", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "status": "success", "ref": "main"},
+			{"id": 2, "status": "failed", "ref": "feature"},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "deployment_list", map[string]any{"repo": "test-owner/test-repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "success") || !strings.Contains(text, "failed") {
+		t.Errorf("expected deployment statuses in output, got: %s", text)
+	}
+}
+
+func TestDeploymentView(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/deployments/1", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"id": 1, "status": "success", "ref": "main",
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "deployment_view", map[string]any{
+		"repo": "test-owner/test-repo", "deployment": 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "success") {
+		t.Errorf("expected deployment status in output, got: %s", text)
+	}
+}
+
+func TestDeploymentViewRequiresID(t *testing.T) {
+	cs := setupServer(t, cmdtest.NewRouterMux())
+	_, err := callTool(t, cs, "deployment_view", map[string]any{"repo": "test-owner/test-repo"})
+	if err == nil {
+		t.Fatal("expected error when deployment is missing")
 	}
 }

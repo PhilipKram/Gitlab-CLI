@@ -46,6 +46,7 @@ func NewPipelineCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.AddCommand(newPipelineTrendsCmd(f))
 	cmd.AddCommand(newPipelineFlakyCmd(f))
 	cmd.AddCommand(newPipelineWatchCmd(f))
+	cmd.AddCommand(newCILintCmd(f))
 
 	return cmd
 }
@@ -59,6 +60,8 @@ func newPipelineListCmd(f *cmdutil.Factory) *cobra.Command {
 		jsonFlag bool
 		web      bool
 		stream   bool
+		orderBy  string
+		sort     string
 	)
 
 	cmd := &cobra.Command{
@@ -67,7 +70,8 @@ func newPipelineListCmd(f *cmdutil.Factory) *cobra.Command {
 		Aliases: []string{"ls"},
 		Example: `  $ glab pipeline list
   $ glab pipeline list --status success --ref main
-  $ glab pipeline list --limit 50`,
+  $ glab pipeline list --limit 50
+  $ glab pipeline list --order-by id --sort desc`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := f.Client()
 			if err != nil {
@@ -98,6 +102,12 @@ func newPipelineListCmd(f *cmdutil.Factory) *cobra.Command {
 			}
 			if ref != "" {
 				opts.Ref = &ref
+			}
+			if orderBy != "" {
+				opts.OrderBy = &orderBy
+			}
+			if sort != "" {
+				opts.Sort = &sort
 			}
 
 			outputFormat, err := f.ResolveFormat(format, jsonFlag)
@@ -163,6 +173,8 @@ func newPipelineListCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON (deprecated: use --format=json)")
 	cmd.Flags().BoolVarP(&web, "web", "w", false, "Open in browser")
 	cmd.Flags().BoolVar(&stream, "stream", false, "Enable streaming mode")
+	cmd.Flags().StringVar(&orderBy, "order-by", "", "Order by: id, status, ref, updated_at, user_id")
+	cmd.Flags().StringVar(&sort, "sort", "", "Sort order: asc or desc")
 
 	return cmd
 }
@@ -262,9 +274,10 @@ func newPipelineViewCmd(f *cmdutil.Factory) *cobra.Command {
 
 func newPipelineRunCmd(f *cmdutil.Factory) *cobra.Command {
 	var (
-		ref       string
-		branch    string
-		variables []string
+		ref           string
+		branch        string
+		variables     []string
+		cancelRunning bool
 	)
 
 	cmd := &cobra.Command{
@@ -273,7 +286,8 @@ func newPipelineRunCmd(f *cmdutil.Factory) *cobra.Command {
 		Aliases: []string{"create", "trigger"},
 		Example: `  $ glab pipeline run --branch main
   $ glab pipeline run --ref develop --variables KEY1=value1,KEY2=value2
-  $ glab pipeline run --ref feature/my-branch --variables "HOTFIX_IMAGES=a,b,c"`,
+  $ glab pipeline run --ref feature/my-branch --variables "HOTFIX_IMAGES=a,b,c"
+  $ glab pipeline run --ref main --cancel-running`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// --branch is an alias for --ref
 			if branch != "" && ref == "" {
@@ -303,12 +317,35 @@ func newPipelineRunCmd(f *cmdutil.Factory) *cobra.Command {
 				varsMap[parts[0]] = parts[1]
 			}
 
+			out := f.IOStreams.Out
+
+			// Cancel running/pending pipelines on the same ref if requested
+			if cancelRunning {
+				for _, pipelineStatus := range []string{"running", "pending"} {
+					s := gitlab.BuildStateValue(pipelineStatus)
+					listOpts := &gitlab.ListProjectPipelinesOptions{
+						Status: &s,
+						Ref:    &ref,
+					}
+					pipelines, _, err := client.Pipelines.ListProjectPipelines(project, listOpts)
+					if err != nil {
+						return fmt.Errorf("listing %s pipelines: %w", pipelineStatus, err)
+					}
+					for _, p := range pipelines {
+						_, _, cancelErr := client.Pipelines.CancelPipelineBuild(project, int64(p.ID))
+						if cancelErr != nil {
+							_, _ = fmt.Fprintf(f.IOStreams.ErrOut, "Warning: failed to cancel pipeline #%d: %v\n", p.ID, cancelErr)
+							continue
+						}
+						_, _ = fmt.Fprintf(out, "Canceled pipeline #%d\n", p.ID)
+					}
+				}
+			}
+
 			pipeline, err := runPipelineWithTrigger(client, project, ref, varsMap)
 			if err != nil {
 				return err
 			}
-
-			out := f.IOStreams.Out
 			_, _ = fmt.Fprintf(out, "Created pipeline #%d\n", pipeline.ID)
 			_, _ = fmt.Fprintf(out, "Status: %s\n", pipeline.Status)
 			_, _ = fmt.Fprintf(out, "%s\n", pipeline.WebURL)
@@ -320,6 +357,7 @@ func newPipelineRunCmd(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().StringVar(&branch, "branch", "", "Alias for --ref")
 	cmd.Flags().Lookup("branch").Hidden = true
 	cmd.Flags().StringArrayVar(&variables, "variables", nil, "Pipeline variables (KEY=value)")
+	cmd.Flags().BoolVar(&cancelRunning, "cancel-running", false, "Cancel running/pending pipelines on the same ref before triggering")
 
 	return cmd
 }
@@ -495,12 +533,17 @@ func newPipelineDeleteCmd(f *cmdutil.Factory) *cobra.Command {
 }
 
 func newPipelineJobsCmd(f *cmdutil.Factory) *cobra.Command {
-	var jsonFlag bool
+	var (
+		jsonFlag    bool
+		limit       int
+		statusScope string
+	)
 
 	cmd := &cobra.Command{
 		Use:     "jobs [<pipeline-id>]",
 		Short:   "List jobs in a pipeline",
-		Example: `  $ glab pipeline jobs 12345`,
+		Example: `  $ glab pipeline jobs 12345
+  $ glab pipeline jobs 12345 --status running --limit 5`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := f.Client()
 			if err != nil {
@@ -517,7 +560,15 @@ func newPipelineJobsCmd(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 
-			jobs, resp, err := client.Jobs.ListPipelineJobs(project, pipelineID, nil)
+			opts := &gitlab.ListJobsOptions{
+				ListOptions: gitlab.ListOptions{PerPage: int64(limit)},
+			}
+			if statusScope != "" {
+				scope := []gitlab.BuildStateValue{gitlab.BuildStateValue(statusScope)}
+				opts.Scope = &scope
+			}
+
+			jobs, resp, err := client.Jobs.ListPipelineJobs(project, pipelineID, opts)
 			if err != nil {
 				statusCode := 0
 				if resp != nil {
@@ -556,6 +607,8 @@ func newPipelineJobsCmd(f *cmdutil.Factory) *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output as JSON")
+	cmd.Flags().IntVarP(&limit, "limit", "L", 100, "Maximum number of results")
+	cmd.Flags().StringVar(&statusScope, "status", "", "Filter by status: running, success, failed, pending, canceled, skipped, manual")
 
 	return cmd
 }
