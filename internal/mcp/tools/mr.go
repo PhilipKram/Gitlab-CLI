@@ -15,6 +15,7 @@ func RegisterMRTools(server *mcp.Server, f *cmdutil.Factory) {
 	registerMRList(server, f)
 	registerMRView(server, f)
 	registerMRDiff(server, f)
+	registerMRNotes(server, f)
 	registerMRComment(server, f)
 	registerMRApprove(server, f)
 	registerMRMerge(server, f)
@@ -124,6 +125,57 @@ func registerMRDiff(server *mcp.Server, f *cmdutil.Factory) {
 			fmt.Fprintf(&sb, "--- a/%s\n+++ b/%s\n%s\n", d.OldPath, d.NewPath, d.Diff)
 		}
 		return plainResult(sb.String()), nil, nil
+	})
+}
+
+func registerMRNotes(server *mcp.Server, f *cmdutil.Factory) {
+	type Input struct {
+		MR             int64  `json:"mr"                         jsonschema:"merge request IID"`
+		Repo           string `json:"repo,omitempty"             jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
+		Sort           string `json:"sort,omitempty"             jsonschema:"sort order: asc or desc (default asc)"`
+		IncludeSystem  bool   `json:"include_system,omitempty"   jsonschema:"include system notes (label changes, status transitions); default false"`
+		PerPage        int64  `json:"per_page,omitempty"         jsonschema:"notes per page (default 50, max 100)"`
+		Page           int64  `json:"page,omitempty"             jsonschema:"page number for pagination (1-indexed)"`
+	}
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mr_notes",
+		Description: "List notes (comments) on a merge request. System notes are excluded by default; set include_system=true to include label/status change events.",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in Input) (*mcp.CallToolResult, any, error) {
+		if err := requireID(in.MR, "mr"); err != nil {
+			return nil, nil, err
+		}
+		client, project, err := resolveClientAndProject(f, in.Repo)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		opts := &gitlab.ListMergeRequestNotesOptions{}
+		if in.Sort != "" {
+			opts.Sort = &in.Sort
+		}
+		opts.PerPage = in.PerPage
+		opts.Page = in.Page
+		if opts.PerPage == 0 {
+			opts.PerPage = 50
+		}
+
+		notes, _, err := client.Notes.ListMergeRequestNotes(project, in.MR, opts)
+		if err != nil {
+			return nil, nil, fmt.Errorf("listing merge request notes: %w", err)
+		}
+
+		if !in.IncludeSystem {
+			filtered := notes[:0]
+			for _, n := range notes {
+				if !n.System {
+					filtered = append(filtered, n)
+				}
+			}
+			notes = filtered
+		}
+
+		return textResult(notes)
 	})
 }
 

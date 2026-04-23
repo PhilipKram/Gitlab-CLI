@@ -602,6 +602,60 @@ func TestMRDiff(t *testing.T) {
 	}
 }
 
+func TestMRNotes(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/merge_requests/1/notes", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{"id": 1, "body": "please rename this function", "system": false, "author": map[string]any{"username": "alice"}},
+			{"id": 2, "body": "changed label to ready", "system": true, "author": map[string]any{"username": "bob"}},
+			{"id": 3, "body": "LGTM after rebase", "system": false, "author": map[string]any{"username": "carol"}},
+		})
+	})
+
+	cs := setupServer(t, mux)
+
+	// Default: system notes excluded.
+	text, err := callTool(t, cs, "mr_notes", map[string]any{
+		"repo": "test-owner/test-repo",
+		"mr":   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "please rename this function") {
+		t.Errorf("expected user note body, got: %s", text)
+	}
+	if !strings.Contains(text, "LGTM after rebase") {
+		t.Errorf("expected second user note body, got: %s", text)
+	}
+	if strings.Contains(text, "changed label to ready") {
+		t.Errorf("system note should be filtered out by default, got: %s", text)
+	}
+
+	// With include_system: all notes returned.
+	text, err = callTool(t, cs, "mr_notes", map[string]any{
+		"repo":           "test-owner/test-repo",
+		"mr":             1,
+		"include_system": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "changed label to ready") {
+		t.Errorf("include_system=true must surface system notes, got: %s", text)
+	}
+}
+
+func TestMRNotesRequiresID(t *testing.T) {
+	cs := setupServer(t, cmdtest.NewRouterMux())
+	_, err := callTool(t, cs, "mr_notes", map[string]any{
+		"repo": "test-owner/test-repo",
+	})
+	if err == nil {
+		t.Fatal("expected error when mr is missing")
+	}
+}
+
 func TestMRComment(t *testing.T) {
 	mux := cmdtest.NewRouterMux()
 	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/merge_requests/1/notes", func(w http.ResponseWriter, r *http.Request) {
