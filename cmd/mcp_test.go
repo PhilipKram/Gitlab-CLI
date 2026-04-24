@@ -785,7 +785,7 @@ func TestSessionBearerAuth(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	handler := store.sessionBearerAuth(inner)
+	handler := store.sessionBearerAuth(inner, "")
 
 	tests := []struct {
 		name       string
@@ -810,6 +810,44 @@ func TestSessionBearerAuth(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSessionBearerAuth_WWWAuthenticateResourceMetadata(t *testing.T) {
+	store := newSessionStore()
+	store.addSession(&mcpSession{
+		BearerToken: "valid-session-token",
+		GitLabHost:  "gitlab.com",
+		AccessToken: "gl-token",
+	})
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	const metaURL = "http://localhost:8090/.well-known/oauth-protected-resource"
+	handler := store.sessionBearerAuth(inner, metaURL)
+
+	t.Run("missing header points at resource metadata", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/mcp", nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		got := w.Header().Get("WWW-Authenticate")
+		want := `Bearer resource_metadata="` + metaURL + `"`
+		if got != want {
+			t.Errorf("WWW-Authenticate = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("invalid token flags error and points at resource metadata", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/mcp", nil)
+		req.Header.Set("Authorization", "Bearer nope")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		got := w.Header().Get("WWW-Authenticate")
+		want := `Bearer error="invalid_token", resource_metadata="` + metaURL + `"`
+		if got != want {
+			t.Errorf("WWW-Authenticate = %q, want %q", got, want)
+		}
+	})
 }
 
 func TestOAuthMetadataHandler(t *testing.T) {
@@ -840,6 +878,42 @@ func TestOAuthMetadataHandler(t *testing.T) {
 	if meta["registration_endpoint"] != "http://localhost:8090/oauth/register" {
 		t.Errorf("unexpected registration_endpoint: %v", meta["registration_endpoint"])
 	}
+	scopes, ok := meta["scopes_supported"].([]interface{})
+	if !ok || len(scopes) == 0 {
+		t.Errorf("expected scopes_supported to be a non-empty array, got %v", meta["scopes_supported"])
+	}
+}
+
+func TestOAuthProtectedResourceHandler(t *testing.T) {
+	handler := oauthProtectedResourceHandler("http://localhost:8090")
+
+	req := httptest.NewRequest("GET", "/.well-known/oauth-protected-resource", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var meta map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &meta); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if meta["resource"] != "http://localhost:8090" {
+		t.Errorf("expected resource=http://localhost:8090, got %v", meta["resource"])
+	}
+	servers, ok := meta["authorization_servers"].([]interface{})
+	if !ok || len(servers) != 1 || servers[0] != "http://localhost:8090" {
+		t.Errorf("expected authorization_servers=[http://localhost:8090], got %v", meta["authorization_servers"])
+	}
+	methods, ok := meta["bearer_methods_supported"].([]interface{})
+	if !ok || len(methods) != 1 || methods[0] != "header" {
+		t.Errorf("expected bearer_methods_supported=[header], got %v", meta["bearer_methods_supported"])
+	}
+	if scopes, ok := meta["scopes_supported"].([]interface{}); !ok || len(scopes) == 0 {
+		t.Errorf("expected non-empty scopes_supported, got %v", meta["scopes_supported"])
+	}
 }
 
 func TestOAuthRegisterHandler(t *testing.T) {
@@ -868,6 +942,24 @@ func TestOAuthRegisterHandler(t *testing.T) {
 	// Verify client was stored
 	if store.getClient(clientID) == nil {
 		t.Error("expected client to be stored")
+	}
+
+	// The registration response must advertise both grants we actually
+	// support at /oauth/token. If this drops back to authorization_code only,
+	// MCP clients stop using refresh tokens and re-run the browser flow on
+	// every restart.
+	grants, ok := resp["grant_types"].([]interface{})
+	if !ok {
+		t.Fatalf("expected grant_types array, got %T", resp["grant_types"])
+	}
+	seen := map[string]bool{}
+	for _, g := range grants {
+		if s, ok := g.(string); ok {
+			seen[s] = true
+		}
+	}
+	if !seen["authorization_code"] || !seen["refresh_token"] {
+		t.Errorf("expected grant_types to include authorization_code and refresh_token, got %v", grants)
 	}
 }
 
