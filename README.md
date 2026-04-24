@@ -11,7 +11,15 @@ Work seamlessly with GitLab from the command line.
 ### Homebrew (macOS & Linux)
 
 ```bash
-brew tap PhilipKram/tap https://github.com/PhilipKram/Gitlab-CLI
+brew tap PhilipKram/tap
+brew install PhilipKram/tap/glab
+```
+
+**Upgrading from an earlier install?** If you previously followed older docs that included an explicit URL, your tap may point at the wrong repo. `brew tap PhilipKram/tap` will silently do nothing (because brew considers the tap "already installed") and `brew install` will fail with *"No available formula or cask with the name 'philipkram/tap/glab'"*. Fix it by untapping first:
+
+```bash
+brew untap PhilipKram/tap
+brew tap PhilipKram/tap
 brew install PhilipKram/tap/glab
 ```
 
