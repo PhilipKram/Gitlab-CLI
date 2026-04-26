@@ -708,6 +708,105 @@ func TestMRApprove(t *testing.T) {
 	}
 }
 
+func TestMRDiscussions(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/merge_requests/1/discussions", func(w http.ResponseWriter, r *http.Request) {
+		cmdtest.JSONResponse(w, http.StatusOK, []map[string]interface{}{
+			{
+				"id": "abc123",
+				"notes": []map[string]interface{}{
+					{"id": 1, "body": "please rename", "resolvable": true, "resolved": false},
+				},
+			},
+			{
+				"id": "def456",
+				"notes": []map[string]interface{}{
+					{"id": 2, "body": "nit: comment", "resolvable": true, "resolved": true},
+				},
+			},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "mr_discussions", map[string]any{
+		"repo": "test-owner/test-repo",
+		"mr":   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "abc123") || !strings.Contains(text, "def456") {
+		t.Errorf("expected both discussion IDs, got: %s", text)
+	}
+}
+
+func TestMRResolve(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/merge_requests/1/discussions/abc123", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("expected PUT, got %s", r.Method)
+		}
+		cmdtest.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"id": "abc123",
+			"notes": []map[string]interface{}{
+				{"id": 1, "resolvable": true, "resolved": true},
+			},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "mr_resolve", map[string]any{
+		"repo":       "test-owner/test-repo",
+		"mr":         1,
+		"discussion": "abc123",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "Resolved discussion abc123 on !1") {
+		t.Errorf("expected resolve confirmation, got: %s", text)
+	}
+}
+
+func TestMRResolveRequiresDiscussion(t *testing.T) {
+	cs := setupServer(t, cmdtest.NewRouterMux())
+	_, err := callTool(t, cs, "mr_resolve", map[string]any{
+		"repo": "test-owner/test-repo",
+		"mr":   1,
+	})
+	if err == nil {
+		t.Fatal("expected error when discussion is missing")
+	}
+}
+
+func TestMRUnresolve(t *testing.T) {
+	mux := cmdtest.NewRouterMux()
+	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/merge_requests/1/discussions/abc123", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("expected PUT, got %s", r.Method)
+		}
+		cmdtest.JSONResponse(w, http.StatusOK, map[string]interface{}{
+			"id": "abc123",
+			"notes": []map[string]interface{}{
+				{"id": 1, "resolvable": true, "resolved": false},
+			},
+		})
+	})
+
+	cs := setupServer(t, mux)
+	text, err := callTool(t, cs, "mr_unresolve", map[string]any{
+		"repo":       "test-owner/test-repo",
+		"mr":         1,
+		"discussion": "abc123",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "Unresolved discussion abc123 on !1") {
+		t.Errorf("expected unresolve confirmation, got: %s", text)
+	}
+}
+
 func TestMRMerge(t *testing.T) {
 	mux := cmdtest.NewRouterMux()
 	mux.HandleFunc("/api/v4/projects/test-owner/test-repo/merge_requests/1/merge", func(w http.ResponseWriter, r *http.Request) {

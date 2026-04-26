@@ -7,7 +7,7 @@ Start it with:
 glab mcp serve
 ```
 
-It exposes 39 GitLab tools, 4 resource types, and 5 prompt templates using the [Model Context Protocol](https://modelcontextprotocol.io),
+It exposes 74 GitLab tools, 4 resource types, and 5 prompt templates using the [Model Context Protocol](https://modelcontextprotocol.io),
 built with the official [`modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk).
 
 Supports two transports:
@@ -104,13 +104,22 @@ glab mcp status --client claude-code
 
 | Category | Tools |
 |----------|-------|
-| **Merge Requests** | `mr_list`, `mr_view`, `mr_diff`, `mr_comment`, `mr_approve`, `mr_merge`, `mr_close`, `mr_reopen`, `mr_create`, `mr_edit` |
+| **Merge Requests** | `mr_list`, `mr_view`, `mr_diff`, `mr_notes`, `mr_comment`, `mr_approve`, `mr_merge`, `mr_close`, `mr_reopen`, `mr_create`, `mr_edit`, `mr_discussions`, `mr_resolve`, `mr_unresolve` |
 | **Issues** | `issue_list`, `issue_view`, `issue_create`, `issue_close`, `issue_reopen`, `issue_comment`, `issue_edit`, `issue_delete` |
-| **Pipelines** | `pipeline_list`, `pipeline_view`, `pipeline_run`, `pipeline_cancel`, `pipeline_retry`, `pipeline_delete`, `pipeline_jobs`, `pipeline_job_log` |
+| **Pipelines** | `pipeline_list`, `pipeline_view`, `pipeline_run`, `pipeline_cancel`, `pipeline_retry`, `pipeline_delete`, `pipeline_jobs`, `pipeline_job_log`, `pipeline_stats`, `pipeline_trends`, `pipeline_slowest_jobs`, `pipeline_flaky` |
 | **Repositories** | `repo_list`, `repo_view` |
+| **Branches** | `branch_list`, `branch_create`, `branch_delete` |
+| **Tags** | `tag_list`, `tag_create`, `tag_delete` |
 | **Releases** | `release_list`, `release_view`, `release_create`, `release_delete` |
 | **Labels** | `label_list`, `label_create`, `label_delete` |
 | **Snippets** | `snippet_list`, `snippet_view`, `snippet_create`, `snippet_delete` |
+| **Variables** | `variable_list`, `variable_get`, `variable_set`, `variable_delete` |
+| **Environments** | `environment_list`, `environment_view`, `environment_stop`, `environment_delete` |
+| **Deployments** | `deployment_list`, `deployment_view` |
+| **Packages** | `package_list`, `package_view`, `package_delete` |
+| **Container Registry** | `registry_list`, `registry_view`, `registry_tags`, `registry_delete_tag` |
+| **Projects** | `project_list`, `project_view`, `project_members` |
+| **User** | `user_whoami` |
 
 ## Resources
 
