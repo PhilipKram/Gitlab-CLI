@@ -23,6 +23,9 @@ func RegisterMRTools(server *mcp.Server, f *cmdutil.Factory) {
 	registerMRReopen(server, f)
 	registerMRCreate(server, f)
 	registerMREdit(server, f)
+	registerMRDiscussions(server, f)
+	registerMRResolve(server, f)
+	registerMRUnresolve(server, f)
 }
 
 func registerMRList(server *mcp.Server, f *cmdutil.Factory) {
@@ -403,5 +406,94 @@ func registerMREdit(server *mcp.Server, f *cmdutil.Factory) {
 			return nil, nil, fmt.Errorf("updating merge request: %w", err)
 		}
 		return plainResult(fmt.Sprintf("Updated merge request !%d\n%s", mr.IID, mr.WebURL)), nil, nil
+	})
+}
+
+func registerMRDiscussions(server *mcp.Server, f *cmdutil.Factory) {
+	type Input struct {
+		MR   int64  `json:"mr"              jsonschema:"merge request IID"`
+		Repo string `json:"repo,omitempty"  jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
+	}
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mr_discussions",
+		Description: "List discussion threads on a merge request, including each thread's ID and resolution status. Use the IDs with mr_resolve / mr_unresolve.",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in Input) (*mcp.CallToolResult, any, error) {
+		if err := requireID(in.MR, "mr"); err != nil {
+			return nil, nil, err
+		}
+		client, project, err := resolveClientAndProject(f, in.Repo)
+		if err != nil {
+			return nil, nil, err
+		}
+		discussions, _, err := client.Discussions.ListMergeRequestDiscussions(project, in.MR, nil)
+		if err != nil {
+			return nil, nil, fmt.Errorf("listing merge request discussions: %w", err)
+		}
+		return textResult(discussions)
+	})
+}
+
+func registerMRResolve(server *mcp.Server, f *cmdutil.Factory) {
+	type Input struct {
+		MR         int64  `json:"mr"             jsonschema:"merge request IID"`
+		Discussion string `json:"discussion"     jsonschema:"discussion thread ID (from mr_discussions)"`
+		Repo       string `json:"repo,omitempty" jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
+	}
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mr_resolve",
+		Description: "Mark a discussion thread on a merge request as resolved",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in Input) (*mcp.CallToolResult, any, error) {
+		if err := requireID(in.MR, "mr"); err != nil {
+			return nil, nil, err
+		}
+		if err := requireString(in.Discussion, "discussion"); err != nil {
+			return nil, nil, err
+		}
+		client, project, err := resolveClientAndProject(f, in.Repo)
+		if err != nil {
+			return nil, nil, err
+		}
+		resolved := true
+		discussion, _, err := client.Discussions.ResolveMergeRequestDiscussion(project, in.MR, in.Discussion, &gitlab.ResolveMergeRequestDiscussionOptions{
+			Resolved: &resolved,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolving discussion: %w", err)
+		}
+		return plainResult(fmt.Sprintf("Resolved discussion %s on !%d", discussion.ID, in.MR)), nil, nil
+	})
+}
+
+func registerMRUnresolve(server *mcp.Server, f *cmdutil.Factory) {
+	type Input struct {
+		MR         int64  `json:"mr"             jsonschema:"merge request IID"`
+		Discussion string `json:"discussion"     jsonschema:"discussion thread ID (from mr_discussions)"`
+		Repo       string `json:"repo,omitempty" jsonschema:"repository in OWNER/REPO or HOST/OWNER/REPO format"`
+	}
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mr_unresolve",
+		Description: "Mark a previously-resolved discussion thread on a merge request as unresolved",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in Input) (*mcp.CallToolResult, any, error) {
+		if err := requireID(in.MR, "mr"); err != nil {
+			return nil, nil, err
+		}
+		if err := requireString(in.Discussion, "discussion"); err != nil {
+			return nil, nil, err
+		}
+		client, project, err := resolveClientAndProject(f, in.Repo)
+		if err != nil {
+			return nil, nil, err
+		}
+		resolved := false
+		discussion, _, err := client.Discussions.ResolveMergeRequestDiscussion(project, in.MR, in.Discussion, &gitlab.ResolveMergeRequestDiscussionOptions{
+			Resolved: &resolved,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("unresolving discussion: %w", err)
+		}
+		return plainResult(fmt.Sprintf("Unresolved discussion %s on !%d", discussion.ID, in.MR)), nil, nil
 	})
 }
